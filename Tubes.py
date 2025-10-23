@@ -67,6 +67,8 @@ class TubeGenerator:
         dn_max = np.max(perp_dists_n)
 
         # solve LP
+        dp_max = 1.5
+        dp_max = 1.5
         prob_p, x_p = self.corridor_LP(d_parallel_p, perp_dists_p, dp_min, dp_max)
         prob_n, x_n = self.corridor_LP(d_parallel_n, perp_dists_n, dn_min, dn_max)
 
@@ -90,7 +92,7 @@ class TubeGenerator:
 
         cost = 0
         for k in range(n_vars):
-            cost += x[k] * (self.curve_len ** (k + 1)) / (k + 1)
+            cost += x[k] * (self.curve_len ** (k + 1)) / ((k + 1)* self.curve_len ** (k+1))
 
         # constraints
         constraints = []
@@ -103,8 +105,14 @@ class TubeGenerator:
             for k in range(n_vars):
                 poly += x[k] * (xi**k)
 
-            constraints.append(poly >= d_min)
-            constraints.append(poly <= d_max)
+            if xi == 0 or xi == self.curve_len:
+                constraints.append(poly >= d_max/2)
+                constraints.append(poly <= d_max)
+            else:
+                constraints.append(poly >= d_min)
+                constraints.append(poly <= d_max)
+
+
 
         for i in range(n_constraints):
             di = d_parallel[i]

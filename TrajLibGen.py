@@ -16,7 +16,7 @@ class TrajLibGen:
         if seed != None:
             np.random.seed(seed)
 
-        self.tube_generator = TubeGenerator()
+        self.tube_generator = TubeGenerator(tube_degree=8)
 
     def create_library(self, n_traj, n_obs, min_dist, max_dist, out_dir):
         import matplotlib

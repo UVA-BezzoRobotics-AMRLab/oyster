@@ -29,10 +29,12 @@ class RobotEnv(gym.Env):
 
         # each task is loaded from parameter list
         self.task_loader = self.load_tasks()
-        self.traj_schedule = [30, 5]
+        self.traj_schedule = [30, 10]
+
+        self.traj_ids= [37, 38, 20, 7, 41, 43, 48, 24, 11, 31, 40, 86, 53, 61, 57, 71, 15, 13, 79, 66, 3, 92, 96]
+        self.curr_traj_idx = 0
 
         self.epoch = 0
-        self.curr_traj_id = 0
 
         if len(self.task_loader) == 0:
             raise ValueError("No parameter files found!")
@@ -63,7 +65,7 @@ class RobotEnv(gym.Env):
         self._goal = None
 
         self.traj_loader = TrajLibLoader("./envs")
-        ret = self.traj_loader.get(self.curr_traj_id)
+        ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
         self.curve = ret["curve"]
         self.obstacles = ret["obs_points"]
         self.current_ref = self.curve.pos(0.0)
@@ -244,9 +246,9 @@ class RobotEnv(gym.Env):
         # schedule trajectories for curriculum learning
         if self.epoch % self.traj_schedule[1] == 0 or \
                 self.epoch == self.traj_schedule[0]:
-            self.curr_traj_id += 1
+            self.curr_traj_idx += 1
 
-        ret = self.traj_loader.get(self.curr_traj_id)
+        ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
         self.curve = ret["curve"]
         self.obstacles = ret["obs_points"]
         self.current_ref = self.curve.pos(0.0)
