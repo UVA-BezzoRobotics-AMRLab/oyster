@@ -1,0 +1,62 @@
+# 0 is double integrator, 1 is unicycle
+mpc_input_type: 1
+frame_id: "map"
+use_vicon: false
+mpc_steps: 10
+controller_frequency: 10
+
+# dynamics
+max_angvel: 1.5
+max_linvel: 2.0
+max_linacc: 3.2
+max_angacc: 6.283
+
+# cost function weights
+w_cte: 1.0
+w_pos: 1.3
+w_linvel: .8
+w_etheta: 1.0
+w_angvel: 0.15
+w_angvel_d: .7
+
+w_lag_e: 100
+w_contour_e: .8
+w_speed: 1.0
+
+# CLF Params
+w_lyap_lag_e: 1
+w_lyap_contour_e: 1
+clf_gamma: .5
+
+# CBF params
+use_cbf: true
+cbf_alpha_abv: 0.05
+cbf_alpha_blw: 0.05
+# cbf_alpha_abv: 1.0
+# cbf_alpha_blw: 1.0
+cbf_colinear: .05
+cbf_padding: .05
+
+# rl training params
+min_alpha: 0.025
+max_alpha: 5.0
+
+# cbf adaptation params
+min_alpha_dot: -0.5
+max_alpha_dot: 0.5
+min_h_val: -10.
+max_h_val: 100.
+
+prop_gain: 1.5
+prop_gain_thresh: .5
+# prop_gain_thresh: .349
+
+max_tube_width: .75
+
+# recompile after changing all params from here on
+ref_length_size: 4
+mpc_ref_samples: 11
+
+# there will be d+1 variables in the LP formulation
+tube_poly_degree: 6
+tube_num_samples: 100
