@@ -124,6 +124,7 @@ class RobotMPC:
             self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt
             self.robot_state[1] += u_uni[0] * np.sin(self.robot_state[2]) * self.dt
             self.robot_state[2] += u_uni[1] * self.dt
+            self.robot_state[2] = np.arctan2(np.sin(self.robot_state[2]), np.cos(self.robot_state[2]))
             self.robot_state[3] = u_uni[0]
 
         elif self.dyn_model == Dynamics.BICYCLE:
@@ -183,6 +184,10 @@ class RobotMPC:
 
     def _di_to_uni_cmd_mapper(self, state, u, kp=10.0):
 
+        params = self.get_params()
+        v_max = params["LINVEL"]
+        w_max = params["ANGVEL"]
+
         theta_v = np.arctan2(u[1], u[0])
         error = theta_v - state[2]
 
@@ -200,5 +205,8 @@ class RobotMPC:
 
         if v > 1e-2:
             u_new[1] = kp * error
+
+        u_new[0] = np.clip(u_new[0], -v_max, v_max)
+        u_new[1] = np.clip(u_new[1], -w_max, w_max)
 
         return u_new

@@ -36,6 +36,7 @@ def sim_policy(variant, path_to_exp, num_trajs=1, deterministic=False, save_vide
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
     eval_tasks=list(tasks[:variant['n_train_tasks']])
+    # eval_tasks=[tasks[variant['n_train_tasks']-1]]
     print('testing on {} test tasks, {} trajectories each'.format(len(eval_tasks), num_trajs))
 
     # instantiate networks

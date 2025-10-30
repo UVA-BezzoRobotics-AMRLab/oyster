@@ -1,9 +1,9 @@
 {
     "env_name": "robo-env",
-    "n_train_tasks": 2,
-    "n_eval_tasks": 1,
+    "n_train_tasks": 6,
+    "n_eval_tasks": 4,
     "env_params": {
-        "n_tasks": 3
+        "n_tasks": 10
     }
     ,
     "algo_params": {

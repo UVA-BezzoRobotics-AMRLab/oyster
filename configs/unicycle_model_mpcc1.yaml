@@ -7,7 +7,7 @@ controller_frequency: 10
 
 # dynamics
 max_angvel: 1.5
-max_linvel: 2.0
+max_linvel: 0.5
 max_linacc: 3.2
 max_angacc: 6.283
 
@@ -21,7 +21,7 @@ w_angvel_d: .7
 
 w_lag_e: 100
 w_contour_e: .8
-w_speed: 2.0
+w_speed: 1.5
 
 # CLF Params
 w_lyap_lag_e: 1
@@ -39,11 +39,11 @@ cbf_padding: .05
 
 # rl training params
 min_alpha: 0.025
-max_alpha: 5.0
+max_alpha: 2.5
 
 # cbf adaptation params
-min_alpha_dot: -0.5
-max_alpha_dot: 0.5
+min_alpha_dot: -0.1
+max_alpha_dot: 0.1
 min_h_val: -10.
 max_h_val: 100.
 

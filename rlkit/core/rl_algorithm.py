@@ -160,13 +160,14 @@ class MetaRLAlgorithm(metaclass=abc.ABCMeta):
                 # temp for evaluating
                 for idx in self.train_tasks:
                     self.task_idx = idx
-                    self.env.reset_task(idx)
                     self.env.set_epoch(it_)
+                    self.env.reset_task(idx)
                     self.collect_data(self.num_initial_steps, 1, np.inf)
             # Sample data from train tasks.
             for i in range(self.num_tasks_sample):
                 idx = np.random.randint(len(self.train_tasks))
                 self.task_idx = idx
+                self.env.set_epoch(it_)
                 self.env.reset_task(idx)
                 self.enc_replay_buffer.task_buffers[idx].clear()
 

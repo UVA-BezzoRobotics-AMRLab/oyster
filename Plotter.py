@@ -43,6 +43,8 @@ class Plotter:
 
         # visualization setup
         self.fig = plt.figure(figsize=(16, 8))
+        # fig_manager = plt.get_current_fig_manager()
+        self.fig.canvas.manager.full_screen_toggle()
 
         self.ax = plt.subplot2grid((2, 2), (0, 0), rowspan=2, colspan=1)
         # self.ax.set_aspect("equal", adjustable="box")

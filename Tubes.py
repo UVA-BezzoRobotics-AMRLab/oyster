@@ -6,7 +6,7 @@ from scipy.interpolate import UnivariateSpline
 
 
 class TubeGenerator:
-    def __init__(self, obstacles=None, curve=None, tube_degree=6):
+    def __init__(self, obstacles=None, curve=None, tube_degree=8):
         self.degree = tube_degree
 
         if curve is not None:
@@ -125,7 +125,9 @@ class TubeGenerator:
         prob = cp.Problem(cp.Minimize(-cost), constraints)
         return prob, x
 
-    def shift_poly_parameter(self, s0, ref_len):
+    def shift_poly_parameter(self, s0, ref_len, degree=None):
+
+        d = self.degree if degree is None else degree
 
         if self.coeffs_p is None or self.coeffs_n is None:
             raise ValueError("Must generate corridor before shifting")
@@ -136,8 +138,8 @@ class TubeGenerator:
         vals_x = np.polyval(self.coeffs_p[::-1], s)
         vals_y = np.polyval(self.coeffs_n[::-1], s)
 
-        shifted_coeffs_x = np.polyfit(tau, vals_x, self.degree)
-        shifted_coeffs_y = np.polyfit(tau, vals_y, self.degree)
+        shifted_coeffs_x = np.polyfit(tau, vals_x, d)
+        shifted_coeffs_y = np.polyfit(tau, vals_y, d)
 
         # need to reverse because np.polyfit order is opposit of our LP
         return shifted_coeffs_x[::-1], shifted_coeffs_y[::-1]

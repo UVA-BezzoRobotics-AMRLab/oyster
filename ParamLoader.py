@@ -49,6 +49,7 @@ class ParameterLoader:
             "MAX_ALPHA_DOT": params["max_alpha_dot"],
             "MIN_H_VAL": params["min_h_val"],
             "MAX_H_VAL": params["max_h_val"],
+            "TUBE_DEGREE": params["tube_poly_degree"],
         }
 
         self.param_dicts.append(ps)

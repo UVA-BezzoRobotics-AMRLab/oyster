@@ -7,7 +7,7 @@ controller_frequency: 10
 
 # dynamics
 max_angvel: 1.5
-max_linvel: 2.0
+max_linvel: 1.5
 max_linacc: 3.2
 max_angacc: 6.283
 
@@ -21,7 +21,7 @@ w_angvel_d: .7
 
 w_lag_e: 100
 w_contour_e: .8
-w_speed: 1.0
+w_speed: 2.0
 
 # CLF Params
 w_lyap_lag_e: 1
@@ -60,3 +60,4 @@ mpc_ref_samples: 11
 # there will be d+1 variables in the LP formulation
 tube_poly_degree: 6
 tube_num_samples: 100
+

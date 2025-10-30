@@ -1,5 +1,6 @@
 # 0 is double integrator, 1 is unicycle
-mpc_input_type: 1
+mpc_input_type: 0
+# frame_id: "uav1/world_origin"
 frame_id: "map"
 use_vicon: false
 mpc_steps: 10
@@ -7,7 +8,7 @@ controller_frequency: 10
 
 # dynamics
 max_angvel: 1.5
-max_linvel: 2.0
+max_linvel: 4.0
 max_linacc: 3.2
 max_angacc: 6.283
 
@@ -21,7 +22,7 @@ w_angvel_d: .7
 
 w_lag_e: 100
 w_contour_e: .8
-w_speed: 1.0
+w_speed: 3.0
 
 # CLF Params
 w_lyap_lag_e: 1
@@ -32,8 +33,6 @@ clf_gamma: .5
 use_cbf: true
 cbf_alpha_abv: 0.05
 cbf_alpha_blw: 0.05
-# cbf_alpha_abv: 1.0
-# cbf_alpha_blw: 1.0
 cbf_colinear: .05
 cbf_padding: .05
 
@@ -60,3 +59,5 @@ mpc_ref_samples: 11
 # there will be d+1 variables in the LP formulation
 tube_poly_degree: 6
 tube_num_samples: 100
+
+

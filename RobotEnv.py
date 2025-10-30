@@ -31,10 +31,12 @@ class RobotEnv(gym.Env):
         self.task_loader = self.load_tasks()
         self.traj_schedule = [30, 10]
 
+        self.randomize_traj = randomize_traj
         self.traj_ids= [37, 38, 20, 7, 41, 43, 48, 24, 11, 31, 40, 86, 53, 61, 57, 71, 15, 13, 79, 66, 3, 92, 96]
         self.curr_traj_idx = 0
 
         self.epoch = 0
+        self.epoch_incremented = False
 
         if len(self.task_loader) == 0:
             raise ValueError("No parameter files found!")
@@ -65,7 +67,18 @@ class RobotEnv(gym.Env):
         self._goal = None
 
         self.traj_loader = TrajLibLoader("./envs")
-        ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
+        traj_num = self.traj_ids[self.curr_traj_idx]
+
+        if self.randomize_traj:
+            # fast DI fails seed 18
+            np.random.seed(22)
+            traj_num = np.random.randint(0, 100)
+            traj_num = 13
+            print(traj_num)
+
+        ret = self.traj_loader.get(traj_num)
+
+        # ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
         self.curve = ret["curve"]
         self.obstacles = ret["obs_points"]
         self.current_ref = self.curve.pos(0.0)
@@ -115,10 +128,12 @@ class RobotEnv(gym.Env):
 
     def step(self, action):
 
+        self.params = self.mpc.get_params()
+
         len_start = self.mpc.get_s_from_pose(self.robot_state[:2])
 
         upper_coeffs, lower_coeffs = self.tube_gen.shift_poly_parameter(
-            len_start, self.mpc.get_params()["REF_LENGTH"]
+            len_start, self.params["REF_LENGTH"], self.params["TUBE_DEGREE"]
         )
 
         self.mpc.set_tubes(upper_coeffs, lower_coeffs)
@@ -126,7 +141,6 @@ class RobotEnv(gym.Env):
         action[0] = unnormalize(action[0], 0.0, 3.0)
         action[1] = unnormalize(action[1], 0.0, 3.0)
 
-        self.params = self.mpc.get_params()
 
         dt = self.params["DT"]
         exceeded_bounds_abv = False
@@ -183,7 +197,7 @@ class RobotEnv(gym.Env):
 
         return (
             obs,
-            self._get_reward(obs, exceeded_bounds_abv, exceeded_bounds_blw, is_colliding),
+            self._get_reward(obs, action, exceeded_bounds_abv, exceeded_bounds_blw, is_colliding),
             # self._get_reward(obs, exceeded_bounds_blw or exceeded_bounds_abv, is_colliding),
             is_colliding or is_done,
             {},
@@ -208,6 +222,7 @@ class RobotEnv(gym.Env):
         return obs
 
     def set_epoch(self, epoch):
+        self.epoch_incremented = epoch != self.epoch
         self.epoch = epoch
 
     def render(self, mode="human", close=False):
@@ -244,14 +259,18 @@ class RobotEnv(gym.Env):
         self.task_idx = idx
 
         # schedule trajectories for curriculum learning
-        if self.epoch % self.traj_schedule[1] == 0 or \
+        if self.epoch != 0 and self.epoch_incremented:
+            if self.epoch % self.traj_schedule[1] == 0 or \
                 self.epoch == self.traj_schedule[0]:
-            self.curr_traj_idx += 1
 
-        ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
-        self.curve = ret["curve"]
-        self.obstacles = ret["obs_points"]
-        self.current_ref = self.curve.pos(0.0)
+                self.curr_traj_idx += 1
+                self.epoch_incremented = False
+
+                print("LOADING TRAJ:", self.traj_ids[self.curr_traj_idx])
+                ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
+                self.curve = ret["curve"]
+                self.obstacles = ret["obs_points"]
+                self.current_ref = self.curve.pos(0.0)
 
         self.reset()
 
@@ -266,6 +285,9 @@ class RobotEnv(gym.Env):
         params = self.mpc.get_params()
         alpha_abv = params["CBF_ALPHA_ABV"]
         alpha_blw = params["CBF_ALPHA_BLW"]
+
+        min_alpha = params["MIN_ALPHA"]
+        max_alpha = params["MAX_ALPHA"]
 
         v_max = params["LINVEL"]
         curr_progress = mpc_state[5] / np.sqrt(2 * v_max**2)
@@ -284,17 +306,25 @@ class RobotEnv(gym.Env):
         obs[7] = curr_progress
         obs[8] = normalize(cbf_data_abv[0], -100, 100)
         obs[9] = normalize(cbf_data_blw[0], -100, 100)
-        obs[10] = normalize(alpha_abv, 0, 5)
-        obs[11] = normalize(alpha_blw, 0, 5)
+        obs[10] = normalize(alpha_abv, min_alpha, max_alpha)
+        obs[11] = normalize(alpha_blw, min_alpha, max_alpha)
         obs[12] = float(solver_status)
 
         return obs
 
-    def _get_reward(self, obs, exceeded_bounds_abv, exceeded_bounds_blw, is_done):
+    def _get_reward(self, obs, action, exceeded_bounds_abv, exceeded_bounds_blw, is_done):
         progress = obs[7]
 
         h_abv = obs[8]
         h_blw = obs[9]
+
+        self.params = self.mpc.get_params()
+        alpha_abv = self.params["CBF_ALPHA_ABV"]
+        alpha_blw = self.params["CBF_ALPHA_BLW"]
+
+        a_max = self.params["MAX_ALPHA"]
+        a_min = self.params["MIN_ALPHA"]
+        avg = (a_max + a_min) / 2.0
 
         mpc_success = bool(obs[12])
 
@@ -305,6 +335,7 @@ class RobotEnv(gym.Env):
         w_progress = 10
         w_collision = 50
         w_alpha_exceeded = 10
+        w_alpha_reg = 10
 
         safety_abv = self.safety_penalty(h_abv)
         safety_blw = self.safety_penalty(h_blw)
@@ -321,6 +352,11 @@ class RobotEnv(gym.Env):
         if not mpc_success:
             feasibility = -w_feas
 
+        # reg_abv = (alpha_abv - avg) ** 2
+        # reg_blw = (alpha_blw - avg) ** 2
+        reg_abv = action[0] ** 2
+        reg_blw = action[1] ** 2
+        
         return float(
             w_safety * safety_abv + 
             w_safety * safety_blw + 
@@ -328,7 +364,9 @@ class RobotEnv(gym.Env):
             w_progress * progress +
             bounds_penalty +
             collision + 
-            feasibility
+            feasibility - 
+            w_alpha_reg * reg_abv - 
+            w_alpha_reg * reg_blw
         )
 
     def safety_penalty(self, h, min_val=-10.0, max_val=1.0):
