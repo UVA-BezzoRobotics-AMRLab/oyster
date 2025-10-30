@@ -16,23 +16,52 @@ def normalize(val, min, max):
     return (val - min) / (max - min)
 
 
-def unnormalize(val, min, max):
-    return val * (max - min) + min
+def action_unnormalize(val, min, max):
+    return (val + 1.0) * (max - min) / 2.0 + min
 
 
 class RobotEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, task={}, n_tasks=2, randomize_tasks=False, n_obs=100, randomize_traj=False):
+    def __init__(
+        self, task={}, n_tasks=2, randomize_tasks=False, n_obs=100, randomize_traj=False
+    ):
 
         super(RobotEnv, self).__init__()
+
+        self.state_dim = 13
+        self.action_dim = 2
 
         # each task is loaded from parameter list
         self.task_loader = self.load_tasks()
         self.traj_schedule = [30, 10]
 
         self.randomize_traj = randomize_traj
-        self.traj_ids= [37, 38, 20, 7, 41, 43, 48, 24, 11, 31, 40, 86, 53, 61, 57, 71, 15, 13, 79, 66, 3, 92, 96]
+        self.traj_ids = [
+            37,
+            38,
+            20,
+            7,
+            41,
+            43,
+            48,
+            24,
+            11,
+            31,
+            40,
+            86,
+            53,
+            61,
+            57,
+            71,
+            15,
+            13,
+            79,
+            66,
+            3,
+            92,
+            96,
+        ]
         self.curr_traj_idx = 0
 
         self.epoch = 0
@@ -43,8 +72,6 @@ class RobotEnv(gym.Env):
 
         self.task_idx = 0
 
-        self.state_dim = 13
-        self.action_dim = 2
         self.low = np.array(
             np.zeros(self.state_dim),
             dtype=np.float64,
@@ -106,10 +133,9 @@ class RobotEnv(gym.Env):
         self.dynamic_model = self.params["DYNAMIC_MODEL"]
         print("LOADING MODEL: ", Dynamics.int2str[self.dynamic_model])
 
-        init_pose = np.concatenate((self.curve.pos(0.), [self.curve.heading(0.)]))
+        init_pose = np.concatenate((self.curve.pos(0.0), [self.curve.heading(0.0)]))
         self.mpc = RobotMPC(init_pose, self.params)
         self.robot_state = self.mpc.get_robot_state()
-
 
         self.mpc.set_trajectory(
             self.curve.xs,
@@ -138,21 +164,16 @@ class RobotEnv(gym.Env):
 
         self.mpc.set_tubes(upper_coeffs, lower_coeffs)
 
-        action[0] = unnormalize(action[0], 0.0, 3.0)
-        action[1] = unnormalize(action[1], 0.0, 3.0)
-
+        action[0] = action_unnormalize(
+            action[0], self.params["MIN_ALPHA_DOT"], self.params["MAX_ALPHA_DOT"]
+        )
+        action[1] = action_unnormalize(
+            action[1], self.params["MIN_ALPHA_DOT"], self.params["MAX_ALPHA_DOT"]
+        )
 
         dt = self.params["DT"]
-        exceeded_bounds_abv = False
-        exceeded_bounds_blw = False
         alpha_abv = self.params["CBF_ALPHA_ABV"] + action[0] * dt
         alpha_blw = self.params["CBF_ALPHA_BLW"] + action[1] * dt
-
-        if alpha_abv < self.params["MIN_ALPHA"] or alpha_abv > self.params["MAX_ALPHA"]:
-            exceeded_bounds_abv = True
-
-        if alpha_blw < self.params["MIN_ALPHA"] or alpha_blw > self.params["MAX_ALPHA"]:
-            exceeded_bounds_blw = True
 
         self.params["CBF_ALPHA_ABV"] = np.clip(
             alpha_abv, self.params["MIN_ALPHA"], self.params["MAX_ALPHA"]
@@ -190,14 +211,17 @@ class RobotEnv(gym.Env):
         else:
             is_colliding = dist > np.polyval(self.upper_coeffs[::-1], len_start)
 
-
         len_start = self.mpc.get_s_from_pose(self.robot_state[:2])
         is_done = len_start > self.curve.knots[-1] - 2e-1
 
-
         return (
             obs,
-            self._get_reward(obs, action, exceeded_bounds_abv, exceeded_bounds_blw, is_colliding),
+            self.get_reward(
+                obs,
+                action,
+                is_colliding,
+                self.params,
+            ),
             # self._get_reward(obs, exceeded_bounds_blw or exceeded_bounds_abv, is_colliding),
             is_colliding or is_done,
             {},
@@ -260,8 +284,10 @@ class RobotEnv(gym.Env):
 
         # schedule trajectories for curriculum learning
         if self.epoch != 0 and self.epoch_incremented:
-            if self.epoch % self.traj_schedule[1] == 0 or \
-                self.epoch == self.traj_schedule[0]:
+            if (
+                self.epoch % self.traj_schedule[1] == 0
+                or self.epoch == self.traj_schedule[0]
+            ):
 
                 self.curr_traj_idx += 1
                 self.epoch_incremented = False
@@ -312,18 +338,31 @@ class RobotEnv(gym.Env):
 
         return obs
 
-    def _get_reward(self, obs, action, exceeded_bounds_abv, exceeded_bounds_blw, is_done):
+    @staticmethod
+    def safety_penalty(h, min_val=-10.0, max_val=1.0):
+        penalty = -np.exp(-10 * (h - 0.5)) + 1
+        return np.clip(penalty, min_val, max_val)
+
+    @staticmethod
+    def get_reward(obs, action, is_done, params):
         progress = obs[7]
 
         h_abv = obs[8]
         h_blw = obs[9]
 
-        self.params = self.mpc.get_params()
-        alpha_abv = self.params["CBF_ALPHA_ABV"]
-        alpha_blw = self.params["CBF_ALPHA_BLW"]
+        alpha_abv = params["CBF_ALPHA_ABV"]
+        alpha_blw = params["CBF_ALPHA_BLW"]
 
-        a_max = self.params["MAX_ALPHA"]
-        a_min = self.params["MIN_ALPHA"]
+        exceeded_bounds_abv = False
+        exceeded_bounds_blw = False
+        if alpha_abv < params["MIN_ALPHA"] or alpha_abv > self.params["MAX_ALPHA"]:
+            exceeded_bounds_abv = True
+
+        if alpha_blw < params["MIN_ALPHA"] or alpha_blw > params["MAX_ALPHA"]:
+            exceeded_bounds_blw = True
+
+        a_max = params["MAX_ALPHA"]
+        a_min = params["MIN_ALPHA"]
         avg = (a_max + a_min) / 2.0
 
         mpc_success = bool(obs[12])
@@ -337,8 +376,8 @@ class RobotEnv(gym.Env):
         w_alpha_exceeded = 10
         w_alpha_reg = 10
 
-        safety_abv = self.safety_penalty(h_abv)
-        safety_blw = self.safety_penalty(h_blw)
+        safety_abv = RobotEnv.safety_penalty(h_abv)
+        safety_blw = RobotEnv.safety_penalty(h_blw)
 
         bounds_penalty = 0
         if exceeded_bounds_abv:
@@ -356,22 +395,19 @@ class RobotEnv(gym.Env):
         # reg_blw = (alpha_blw - avg) ** 2
         reg_abv = action[0] ** 2
         reg_blw = action[1] ** 2
-        
-        return float(
-            w_safety * safety_abv + 
-            w_safety * safety_blw + 
-            # w_progress * (1 - progress) +
-            w_progress * progress +
-            bounds_penalty +
-            collision + 
-            feasibility - 
-            w_alpha_reg * reg_abv - 
-            w_alpha_reg * reg_blw
-        )
 
-    def safety_penalty(self, h, min_val=-10.0, max_val=1.0):
-        penalty = -np.exp(-10 * (h-0.5)) + 1
-        return np.clip(penalty, min_val, max_val)
+        return float(
+            w_safety * safety_abv
+            + w_safety * safety_blw
+            +
+            # w_progress * (1 - progress) +
+            w_progress * progress
+            + bounds_penalty
+            + collision
+            + feasibility
+            - w_alpha_reg * reg_abv
+            - w_alpha_reg * reg_blw
+        )
 
     def _obs_init(self, n_obs, min_dist):
         # obs = [[6.12, 2.3], [2.75, 4.45]]
@@ -380,20 +416,20 @@ class RobotEnv(gym.Env):
         # get initial obstacles
         d_min = 0.1
         d_max = 0.3
-        n = np.random.randint(0,4) + 1
+        n = np.random.randint(0, 4) + 1
         ss = []
         for i in range(0, n):
 
             s = np.random.rand() * self.curve.get_arclen()
             while len(ss) > 0 and np.abs(np.min(np.array(ss) - s)) < 1:
                 s = np.random.rand() * self.curve.get_arclen()
-            
-            d = np.random.rand() * (d_max-d_min) + d_min
+
+            d = np.random.rand() * (d_max - d_min) + d_min
             d = -d if np.random.rand() > 0.5 else d
             pos = self.curve.pos(s)
             tan = self.curve.vel(s)
             tan = tan / np.linalg.norm(tan)
-            normal = np.array([-tan[1],tan[0]])
+            normal = np.array([-tan[1], tan[0]])
 
             obs.append((pos + normal * d).tolist())
 
@@ -401,7 +437,7 @@ class RobotEnv(gym.Env):
         needed = n_obs
 
         # get trajectory points
-        traj = self.curve.fill(np.linspace(0,1,100))
+        traj = self.curve.fill(np.linspace(0, 1, 100))
 
         while len(obs) < n_obs:
             p_min = min(np.min(self.curve.xs), np.min(self.curve.ys))
