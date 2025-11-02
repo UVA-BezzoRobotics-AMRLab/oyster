@@ -1,3 +1,4 @@
 envs/
 output/
 __pycache__/
+*.egg*
