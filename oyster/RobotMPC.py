@@ -41,7 +41,7 @@ class RobotMPC:
         self.robot_state = np.zeros(4, dtype=np.float64)
         self.robot_state[:2] = init_pos[:2]
 
-        if self.dyn_model in [Dynamics.UNICYCLE, Dynamics.BICYCLE]:
+        if self.dyn_model == Dynamics.UNICYCLE:
             print(init_pos[2])
             self.robot_state[2] = init_pos[2]
 
@@ -87,7 +87,7 @@ class RobotMPC:
             self.prev_s = len_start
 
             state = np.concatenate((self.robot_state, np.array([0, s_dot])))
-            if self.dyn_model in [Dynamics.UNICYCLE, Dynamics.BICYCLE]:
+            if self.dyn_model == Dynamics.UNICYCLE:
                 v = self.robot_state[3]
                 state[2] = v * np.cos(self.robot_state[2])
                 state[3] = v * np.sin(self.robot_state[2])
@@ -121,25 +121,25 @@ class RobotMPC:
             )
             self.robot_state[3] = u_uni[0]
 
-        elif self.dyn_model == Dynamics.BICYCLE:
-            # print("initial u:", u)
-            u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
-            L = 0.5
-            if u_uni[0] > 1e-3:
-                delta = np.arctan2(L * u_uni[1], u_uni[0])
-            elif u_uni[1] > 1e-2:
-                u_uni[0] = 0.1
-                delta = np.arctan2(L * u_uni[1], u_uni[0])
-            else:
-                delta = 0.0
+        # elif self.dyn_model == Dynamics.BICYCLE:
+        #     # print("initial u:", u)
+        #     u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
+        #     L = 0.5
+        #     if u_uni[0] > 1e-3:
+        #         delta = np.arctan2(L * u_uni[1], u_uni[0])
+        #     elif u_uni[1] > 1e-2:
+        #         u_uni[0] = 0.1
+        #         delta = np.arctan2(L * u_uni[1], u_uni[0])
+        #     else:
+        #         delta = 0.0
 
-            delta = np.clip(delta, -np.pi / 6, np.pi / 6)
-            # print("mapped u:", u_uni)
+        #     delta = np.clip(delta, -np.pi / 6, np.pi / 6)
+        #     # print("mapped u:", u_uni)
 
-            self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt
-            self.robot_state[1] += u_uni[0] * np.sin(self.robot_state[2]) * self.dt
-            self.robot_state[2] += u_uni[0] * np.tan(delta) / L * self.dt
-            self.robot_state[3] = u_uni[0]
+        #     self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt
+        #     self.robot_state[1] += u_uni[0] * np.sin(self.robot_state[2]) * self.dt
+        #     self.robot_state[2] += u_uni[0] * np.tan(delta) / L * self.dt
+        #     self.robot_state[3] = u_uni[0]
 
         return self.robot_state
 
