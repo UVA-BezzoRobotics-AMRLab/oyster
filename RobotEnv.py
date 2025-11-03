@@ -100,7 +100,7 @@ class RobotEnv(gym.Env):
             # fast DI fails seed 18
             np.random.seed(22)
             traj_num = np.random.randint(0, 100)
-            traj_num = 13
+            traj_num = 1
             print(traj_num)
 
         ret = self.traj_loader.get(traj_num)
@@ -175,6 +175,13 @@ class RobotEnv(gym.Env):
         alpha_abv = self.params["CBF_ALPHA_ABV"] + action[0] * dt
         alpha_blw = self.params["CBF_ALPHA_BLW"] + action[1] * dt
 
+        exceed_count = 0
+        if alpha_abv < self.params["MIN_ALPHA"] or alpha_abv > self.params["MAX_ALPHA"]:
+            exceed_count += 1
+
+        if alpha_blw < self.params["MIN_ALPHA"] or alpha_blw > self.params["MAX_ALPHA"]:
+            exceed_count += 1
+
         self.params["CBF_ALPHA_ABV"] = np.clip(
             alpha_abv, self.params["MIN_ALPHA"], self.params["MAX_ALPHA"]
         )
@@ -216,9 +223,10 @@ class RobotEnv(gym.Env):
 
         return (
             obs,
-            self.get_reward(
+            RobotEnv.get_reward(
                 obs,
                 action,
+                exceed_count,
                 is_colliding,
                 self.params,
             ),
@@ -344,7 +352,7 @@ class RobotEnv(gym.Env):
         return np.clip(penalty, min_val, max_val)
 
     @staticmethod
-    def get_reward(obs, action, is_done, params):
+    def get_reward(obs, action, exceed_count, is_done, params):
         progress = obs[7]
 
         h_abv = obs[8]
@@ -353,13 +361,6 @@ class RobotEnv(gym.Env):
         alpha_abv = params["CBF_ALPHA_ABV"]
         alpha_blw = params["CBF_ALPHA_BLW"]
 
-        exceeded_bounds_abv = False
-        exceeded_bounds_blw = False
-        if alpha_abv < params["MIN_ALPHA"] or alpha_abv > self.params["MAX_ALPHA"]:
-            exceeded_bounds_abv = True
-
-        if alpha_blw < params["MIN_ALPHA"] or alpha_blw > params["MAX_ALPHA"]:
-            exceeded_bounds_blw = True
 
         a_max = params["MAX_ALPHA"]
         a_min = params["MIN_ALPHA"]
@@ -379,12 +380,7 @@ class RobotEnv(gym.Env):
         safety_abv = RobotEnv.safety_penalty(h_abv)
         safety_blw = RobotEnv.safety_penalty(h_blw)
 
-        bounds_penalty = 0
-        if exceeded_bounds_abv:
-            bounds_penalty -= w_alpha_exceeded
-        if exceeded_bounds_blw:
-            bounds_penalty -= w_alpha_exceeded
-
+        bounds_penalty = -exceed_count * w_alpha_exceeded
         collision = -w_collision if is_done else 0
 
         feasibility = 0

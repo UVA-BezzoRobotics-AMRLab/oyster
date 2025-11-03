@@ -41,8 +41,8 @@ min_alpha: 0.025
 max_alpha: 2.5
 
 # cbf adaptation params
-min_alpha_dot: -0.1
-max_alpha_dot: 0.1
+min_alpha_dot: -3
+max_alpha_dot: 3
 min_h_val: -10.
 max_h_val: 100.
 
