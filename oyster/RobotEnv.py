@@ -244,11 +244,15 @@ class RobotEnv(gym.Env):
         # self.robot_state = np.zeros(4, dtype=np.float64)
         # self.mpc.set_mpc_state(self.robot_state)
 
-        obs = np.zeros(13, dtype=np.float64)
+        obs = np.zeros(17, dtype=np.float64)
         obs[4] = 1.0
         obs[5] = -1.0
-        obs[10] = 0.0
-        obs[11] = 0.0
+        obs[6] = 1.0
+        obs[7] = -1.0
+        obs[8] = 1.0
+        obs[9] = -1.0
+        obs[12] = 0.0
+        obs[13] = 0.0
 
         return obs
 
@@ -328,20 +332,33 @@ class RobotEnv(gym.Env):
         state_limits = self.mpc.get_state_limits()
         input_limits = self.mpc.get_input_limits()
 
-        obs = np.zeros(13, dtype=np.float64)
+        obs = np.zeros(17, dtype=np.float64)
         obs[0] = normalize(mpc_state[2], state_limits[0][2], state_limits[1][2])
         obs[1] = normalize(mpc_state[3], state_limits[0][3], state_limits[1][3])
         obs[2] = normalize(mpc_input[0], input_limits[0][0], input_limits[1][0])
         obs[3] = normalize(mpc_input[1], input_limits[0][1], input_limits[1][0])
-        obs[4] = normalize(cbf_data_abv[1], 0, 1.0)
-        obs[5] = normalize(cbf_data_blw[1], 0, 1.0)
-        obs[6] = normalize(cbf_data_abv[2], -np.pi, np.pi)
-        obs[7] = curr_progress
-        obs[8] = normalize(cbf_data_abv[0], -100, 100)
-        obs[9] = normalize(cbf_data_blw[0], -100, 100)
-        obs[10] = normalize(alpha_abv, min_alpha, max_alpha)
-        obs[11] = normalize(alpha_blw, min_alpha, max_alpha)
-        obs[12] = float(solver_status)
+        # obs[4] = normalize(cbf_data_abv[1], 0, 1.0)
+        # obs[5] = normalize(cbf_data_blw[1], 0, 1.0)
+
+        len_start = self.mpc.get_s_from_pose(self.robot_state[:2])
+        upper_coeffs, lower_coeffs = self.tube_gen.shift_poly_parameter(
+            len_start, self.params["REF_LENGTH"], self.params["TUBE_DEGREE"]
+        )
+
+        obs[4] = normalize(np.polyval(upper_coeffs, 0), 0, 1.0)
+        obs[5] = normalize(np.polyval(lower_coeffs, 0), 0, 1.0)
+        obs[6] = normalize(np.polyval(upper_coeffs, min(.5, self.params["REF_LENGTH"])), 0, 1.0)
+        obs[7] = normalize(np.polyval(lower_coeffs, min(.5, self.params["REF_LENGTH"])), 0, 1.0)
+        obs[8] = normalize(np.polyval(upper_coeffs, min(1.0, self.params["REF_LENGTH"])), 0, 1.0)
+        obs[9] = normalize(np.polyval(lower_coeffs, min(1.0, self.params["REF_LENGTH"])), 0, 1.0)
+
+        obs[10] = normalize(cbf_data_abv[2], -np.pi, np.pi)
+        obs[11] = curr_progress
+        obs[12] = normalize(cbf_data_abv[0], -100, 100)
+        obs[13] = normalize(cbf_data_blw[0], -100, 100)
+        obs[14] = normalize(alpha_abv, min_alpha, max_alpha)
+        obs[15] = normalize(alpha_blw, min_alpha, max_alpha)
+        obs[16] = float(solver_status)
 
         return obs
 
@@ -354,8 +371,8 @@ class RobotEnv(gym.Env):
     def get_reward(obs, action, exceed_count, is_done, params):
         progress = obs[7]
 
-        h_abv = obs[8]
-        h_blw = obs[9]
+        # h_abv = obs[8]
+        # h_blw = obs[9]
 
         alpha_abv = params["CBF_ALPHA_ABV"]
         alpha_blw = params["CBF_ALPHA_BLW"]
@@ -383,8 +400,8 @@ class RobotEnv(gym.Env):
         w_alpha_exceeded = 10
         w_alpha_reg = 10
 
-        safety_abv = RobotEnv.safety_penalty(h_abv)
-        safety_blw = RobotEnv.safety_penalty(h_blw)
+        # safety_abv = RobotEnv.safety_penalty(h_abv)
+        # safety_blw = RobotEnv.safety_penalty(h_blw)
 
         bounds_penalty = -exceed_count * w_alpha_exceeded
         collision = -w_collision if is_done else 0
@@ -399,9 +416,9 @@ class RobotEnv(gym.Env):
         reg_blw = action[1] ** 2
 
         return float(
-            w_safety * safety_abv
-            + w_safety * safety_blw
-            +
+            # w_safety * safety_abv
+            # + w_safety * safety_blw
+            # +
             # w_progress * (1 - progress) +
             w_progress * progress
             + bounds_penalty
