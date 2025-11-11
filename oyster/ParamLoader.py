@@ -1,5 +1,6 @@
 import yaml
 
+from oyster.RobotMPC import Dynamics
 
 class ParameterLoader:
     def __init__(self, yaml_files):
@@ -42,7 +43,7 @@ class ParameterLoader:
             "CBF_ALPHA_BLW": params["cbf_alpha_blw"],
             "CBF_COLINEAR": params["cbf_colinear"],
             "CBF_PADDING": params["cbf_padding"],
-            "DYNAMIC_MODEL": params["mpc_input_type"],
+            "DYNAMIC_MODEL": Dynamics(params["mpc_input_type"]),
             "MIN_ALPHA": params["min_alpha"],
             "MAX_ALPHA": params["max_alpha"],
             "MIN_ALPHA_DOT": params["min_alpha_dot"],

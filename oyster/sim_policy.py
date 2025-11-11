@@ -36,8 +36,8 @@ def sim_policy(
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
-    # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    eval_tasks = list(tasks[: variant["n_train_tasks"]])
+    eval_tasks=list(tasks[-variant['n_eval_tasks']:])
+    # eval_tasks = list(tasks[: variant["n_train_tasks"]])
     # eval_tasks=[tasks[variant['n_train_tasks']-1]]
     print(
         "testing on {} test tasks, {} trajectories each".format(

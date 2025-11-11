@@ -5,11 +5,11 @@ import numpy as np
 
 from gym import spaces
 from oyster.Plotter import Plotter
-from oyster.RobotMPC import RobotMPC
 from oyster.Bezier import BezierCurve
 from oyster.Tubes import TubeGenerator
 from oyster.TrajLibGen import TrajLibLoader
 from oyster.ParamLoader import ParameterLoader
+from oyster.RobotMPC import RobotMPC, Dynamics
 
 
 def normalize(val, min, max):
@@ -24,7 +24,7 @@ class RobotEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
     def __init__(
-        self, task={}, n_tasks=2, randomize_tasks=False, n_obs=100, randomize_traj=False
+        self, task={}, n_tasks=2, randomize_tasks=False, n_obs=100, traj_id=None, randomize_traj=False
     ):
 
         super(RobotEnv, self).__init__()
@@ -38,7 +38,7 @@ class RobotEnv(gym.Env):
 
         self.randomize_traj = randomize_traj
         self.traj_ids = [
-            37,
+            94,
             38,
             20,
             7,
@@ -63,6 +63,7 @@ class RobotEnv(gym.Env):
             96,
         ]
         self.curr_traj_idx = 0
+        self.did_collide = False
 
         self.epoch = 0
         self.epoch_incremented = False
@@ -96,16 +97,21 @@ class RobotEnv(gym.Env):
         self.traj_loader = TrajLibLoader("./envs")
         traj_num = self.traj_ids[self.curr_traj_idx]
 
-        if self.randomize_traj:
+        if traj_id:
+            traj_num = traj_id
+        elif self.randomize_traj:
             # fast DI fails seed 18
             np.random.seed(22)
             traj_num = np.random.randint(0, 100)
-            traj_num = 1
-            print(traj_num)
 
-        ret = self.traj_loader.get(traj_num)
+        # traj_num = 90
+        self.set_traj_id(traj_num)
 
-        # ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
+        self.plotter = None
+        self.reset()
+
+    def set_traj_id(self, traj_id):
+        ret = self.traj_loader.get(traj_id)
         self.curve = ret["curve"]
         self.obstacles = ret["obs_points"]
         self.current_ref = self.curve.pos(0.0)
@@ -123,9 +129,6 @@ class RobotEnv(gym.Env):
         ) = self.tube_gen.get_dists()
 
         self.upper_coeffs, self.lower_coeffs = self.tube_gen.generate_corridor()
-
-        self.plotter = None
-        self.reset()
 
     def set_mpc(self, params):
 
@@ -220,6 +223,9 @@ class RobotEnv(gym.Env):
         len_start = self.mpc.get_s_from_pose(self.robot_state[:2])
         is_done = len_start > self.curve.knots[-1] - 2e-1
 
+        if is_colliding:
+            self.did_collide = True
+
         return (
             obs,
             RobotEnv.get_reward(
@@ -235,10 +241,20 @@ class RobotEnv(gym.Env):
         )
 
     def reset(self):
+        self.did_collide = False
+
         if self.plotter:
             self.plotter.close()
 
-        self.set_mpc(self.task_loader[self.task_idx])
+        params = copy.deepcopy(self.task_loader[self.task_idx])
+        min_alpha = params["MIN_ALPHA"]
+        max_alpha = params["MAX_ALPHA"]
+        if self.epoch >= self.traj_schedule[0]:
+
+            params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
+            params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
+
+        self.set_mpc(params)
 
         self.plotter = None
         # self.robot_state = np.zeros(4, dtype=np.float64)
@@ -247,8 +263,10 @@ class RobotEnv(gym.Env):
         obs = np.zeros(13, dtype=np.float64)
         obs[4] = 1.0
         obs[5] = -1.0
-        obs[10] = 0.0
-        obs[11] = 0.0
+        obs[10] = normalize(params["CBF_ALPHA_ABV"], min_alpha, max_alpha)
+        obs[11] = normalize(params["CBF_ALPHA_BLW"], min_alpha, max_alpha)
+        # obs[10] = 0.0
+        # obs[11] = 0.0
 
         return obs
 
@@ -300,10 +318,11 @@ class RobotEnv(gym.Env):
                 self.epoch_incremented = False
 
                 print("LOADING TRAJ:", self.traj_ids[self.curr_traj_idx])
-                ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
-                self.curve = ret["curve"]
-                self.obstacles = ret["obs_points"]
-                self.current_ref = self.curve.pos(0.0)
+                self.set_traj_id(self.traj_ids[self.curr_traj_idx])
+                # ret = self.traj_loader.get(self.traj_ids[self.curr_traj_idx])
+                # self.curve = ret["curve"]
+                # self.obstacles = ret["obs_points"]
+                # self.current_ref = self.curve.pos(0.0)
 
         self.reset()
 
@@ -379,9 +398,9 @@ class RobotEnv(gym.Env):
         w_feas = 10
         w_safety = 6
         w_progress = 10
-        w_collision = 50
-        w_alpha_exceeded = 10
-        w_alpha_reg = 10
+        w_collision = 75
+        w_alpha_exceeded = 15
+        w_alpha_reg = 13
 
         safety_abv = RobotEnv.safety_penalty(h_abv)
         safety_blw = RobotEnv.safety_penalty(h_blw)
@@ -393,8 +412,9 @@ class RobotEnv(gym.Env):
         if not mpc_success:
             feasibility = -w_feas
 
-        # reg_abv = (alpha_abv - avg) ** 2
-        # reg_blw = (alpha_blw - avg) ** 2
+        mid_abv = (alpha_abv - avg) ** 2
+        mid_blw = (alpha_blw - avg) ** 2
+
         reg_abv = action[0] ** 2
         reg_blw = action[1] ** 2
 
@@ -407,6 +427,8 @@ class RobotEnv(gym.Env):
             + bounds_penalty
             + collision
             + feasibility
+            - w_alpha_reg * mid_abv
+            - w_alpha_reg * mid_blw
             - w_alpha_reg * reg_abv
             - w_alpha_reg * reg_blw
         )

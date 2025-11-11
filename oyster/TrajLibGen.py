@@ -16,7 +16,7 @@ class TrajLibGen:
         if seed != None:
             np.random.seed(seed)
 
-        self.tube_generator = TubeGenerator(tube_degree=8)
+        self.tube_generator = TubeGenerator(tube_degree=6)
 
     def create_library(self, n_traj, n_obs, min_dist, max_dist, out_dir):
         import matplotlib
@@ -99,7 +99,7 @@ class TrajLibGen:
         return curve
 
     # horrendous naming scheme...
-    def gen_obs(self, curve, n_obs, d_min, d_max, min_dist=0.6):
+    def gen_obs(self, curve, n_obs, d_min, d_max, min_dist=0.3):
         # obs = [[6.12, 2.3], [2.75, 4.45]]
         obs = []
 

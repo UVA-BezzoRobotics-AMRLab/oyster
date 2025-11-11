@@ -5,6 +5,7 @@ import json
 import numpy as np
 import click
 import torch
+import random
 
 from RobotEnv import RobotEnv
 from matplotlib import pyplot as plt
@@ -17,7 +18,7 @@ from rlkit.torch.sac.policies import MakeDeterministic
 from rlkit.samplers.util import rollout
 
 
-def sim_policy(
+def test_suite(
     variant, path_to_exp, num_trajs=1, deterministic=False, save_video=False
 ):
     """
@@ -36,9 +37,8 @@ def sim_policy(
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
-    # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    eval_tasks = list(tasks[: variant["n_train_tasks"]])
-    # eval_tasks=[tasks[variant['n_train_tasks']-1]]
+    eval_tasks=list(tasks[-variant['n_eval_tasks']:])
+    # eval_tasks = list(tasks[: variant["n_train_tasks"]])
     print(
         "testing on {} test tasks, {} trajectories each".format(
             len(eval_tasks), num_trajs
@@ -86,44 +86,57 @@ def sim_policy(
     # loop through tasks collecting rollouts
     all_rets = []
     # video_frames = []
+    with open("out.txt", 'w') as f:
+        f.write("Below are simulation trial results\n")
+        f.write("trial\ttraj_id\tsteps\tsuccess\n")
+
+    # worlds = [90, 54, 23, 82, 34, 76, 44, 96, 89, 20, 87, 28, 17, 71, 4]
+    worlds = [i for i in range(99)]
     for idx in eval_tasks:
         env.reset_task(idx)
         agent.clear_z()
         paths = []
-        for n in range(num_trajs):
-            path = rollout(
-                env,
-                agent,
-                max_path_length=variant["algo_params"]["max_path_length"],
-                accum_context=True,
-                save_frames=False,
-                animated=True,
-            )
-            paths.append(path)
-            # if save_video:
-            #     video_frames += [t['frame'] for t in path['env_infos']]
-            if n >= variant["algo_params"]["num_exp_traj_eval"]:
-                agent.infer_posterior(agent.context)
-        all_rets.append([sum(p["rewards"]) for p in paths])
 
-        if save_video:
-            from datetime import datetime
+        with open("out.txt", 'a') as f:
+            f.write("TASK %d\n" % (idx))
 
-            current_datetime = datetime.now()
-            date_str = current_datetime.strftime("%H_%M_%S_%d-%m-%Y")
-            plt.savefig(f"./output/{date_str}")
-    # if save_video:
-    #     # save frames to file temporarily
-    #     temp_dir = os.path.join(path_to_exp, 'temp')
-    #     os.makedirs(temp_dir, exist_ok=True)
-    #     for i, frm in enumerate(video_frames):
-    #         frm.save(os.path.join(temp_dir, '%06d.jpg' % i))
-    #
-    #     video_filename=os.path.join(path_to_exp, 'video.mp4'.format(idx))
-    #     # run ffmpeg to make the video
-    #     os.system('ffmpeg -i {}/%06d.jpg -vcodec mpeg4 {}'.format(temp_dir, video_filename))
-    #     # delete the frames
-    #     shutil.rmtree(temp_dir)
+        for traj_id in worlds:
+            try:
+                env.set_traj_id(traj_id)
+            except:
+                if env.plotter:
+                    env.plotter.close()
+                continue
+
+            for n in range(num_trajs):
+                try:
+                    path = rollout(
+                        env,
+                        agent,
+                        max_path_length=400,
+                        accum_context=True,
+                        save_frames=False,
+                        animated=True,
+                    )
+                except:
+                    break
+
+                paths.append(path)
+                # if save_video:
+                #     video_frames += [t['frame'] for t in path['env_infos']]
+                if n >= variant["algo_params"]["num_exp_traj_eval"]:
+                    agent.infer_posterior(agent.context)
+
+                steps = len(path["observations"])
+                success = 1
+                if env.did_collide or steps >= 400:
+                    success = 0
+
+                with open("out.txt", "a") as f:
+                    f.write("%d\t%d\t%d\t%d\n" % (n, traj_id, steps, success))
+                    
+            all_rets.append([sum(p["rewards"]) for p in paths])
+
 
     # compute average returns across tasks
     n = min([len(a) for a in all_rets])
@@ -136,7 +149,7 @@ def sim_policy(
 @click.command()
 @click.argument("config", default=None)
 @click.argument("path", default=None)
-@click.option("--num_trajs", default=3)
+@click.option("--num_trajs", default=10)
 @click.option("--deterministic", is_flag=True, default=False)
 @click.option("--video", is_flag=True, default=False)
 def main(config, path, num_trajs, deterministic, video):
@@ -145,8 +158,9 @@ def main(config, path, num_trajs, deterministic, video):
         with open(osp.join(config)) as f:
             exp_params = json.load(f)
         variant = deep_update_dict(exp_params, variant)
-    sim_policy(variant, path, num_trajs, deterministic, video)
+    test_suite(variant, path, num_trajs, deterministic, video)
 
 
 if __name__ == "__main__":
     main()
+
