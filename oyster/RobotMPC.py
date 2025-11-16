@@ -36,6 +36,7 @@ class RobotMPC:
         # }
 
         self.dyn_model = params["DYNAMIC_MODEL"]
+        print("dynamic model: ", self.dyn_model)
 
         # robot state: x, y, vx, vy
         self.robot_state = np.zeros(4, dtype=np.float64)
@@ -93,6 +94,8 @@ class RobotMPC:
                 state[3] = v * np.sin(self.robot_state[2])
 
             u = self.mpc.solve(state, False)
+        else:
+            print("[RobotMPC] start length exceeds maximum length")
 
         u[0] = max(min(u[0], self.v_max), -self.v_max)
         u[1] = max(min(u[1], self.v_max), -self.v_max)

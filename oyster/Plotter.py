@@ -45,7 +45,7 @@ class Plotter:
         # visualization setup
         self.fig = plt.figure(figsize=(16, 8))
         # fig_manager = plt.get_current_fig_manager()
-        self.fig.canvas.manager.full_screen_toggle()
+        # self.fig.canvas.manager.full_screen_toggle()
 
         self.ax = plt.subplot2grid((2, 2), (0, 0), rowspan=2, colspan=1)
         # self.ax.set_aspect("equal", adjustable="box")
@@ -194,8 +194,8 @@ class Plotter:
         upper_coeffs, lower_coeffs = tube_gen.shift_poly_parameter(len_start, ref_len)
 
         tau = np.linspace(0, len_stop - len_start, 100)
-        upper_d = np.polyval(upper_coeffs[::-1], tau)
-        lower_d = np.polyval(lower_coeffs[::-1], tau)
+        upper_d = np.polyval(upper_coeffs, tau)
+        lower_d = np.polyval(lower_coeffs, tau)
 
         # offset trajectory
         upper = traj + upper_d[:, None] * normals

@@ -6,7 +6,7 @@ from scipy.interpolate import UnivariateSpline
 
 
 class TubeGenerator:
-    def __init__(self, obstacles=None, curve=None, tube_degree=8):
+    def __init__(self, obstacles=None, curve=None, tube_degree=6):
         self.degree = tube_degree
 
         if curve is not None:
@@ -67,8 +67,8 @@ class TubeGenerator:
         dn_max = np.max(perp_dists_n)
 
         # solve LP
-        dp_max = 1.5
-        dp_max = 1.5
+        # dp_max = 1.5
+        # dp_max = 1.5
         prob_p, x_p = self.corridor_LP(d_parallel_p, perp_dists_p, dp_min, dp_max)
         prob_n, x_n = self.corridor_LP(d_parallel_n, perp_dists_n, dn_min, dn_max)
 
@@ -92,7 +92,7 @@ class TubeGenerator:
 
         cost = 0
         for k in range(n_vars):
-            cost += x[k] * (self.curve_len ** (k + 1)) / ((k + 1)* self.curve_len ** (k+1))
+            cost += x[k] * (self.curve_len ** (k + 1)) / (k + 1)
 
         # constraints
         constraints = []
@@ -106,7 +106,7 @@ class TubeGenerator:
                 poly += x[k] * (xi**k)
 
             if xi == 0 or xi == self.curve_len:
-                constraints.append(poly >= d_max/2)
+                constraints.append(poly >= 0.3)
                 constraints.append(poly <= d_max)
             else:
                 constraints.append(poly >= d_min)
@@ -142,4 +142,12 @@ class TubeGenerator:
         shifted_coeffs_y = np.polyfit(tau, vals_y, d)
 
         # need to reverse because np.polyfit order is opposit of our LP
-        return shifted_coeffs_x[::-1], shifted_coeffs_y[::-1]
+        return shifted_coeffs_x, shifted_coeffs_y
+
+    def get_max_width(self):
+        #not sure if this is faster than solving the polynomial roots directly
+        ss = np.linspace(0, self.curve_len, 100)
+        abv_dists = np.polyval(self.coeffs_p[::-1], ss)
+        blw_dists = np.polyval(self.coeffs_n[::-1], ss)
+
+        return np.max(abv_dists + blw_dists)
