@@ -4,13 +4,19 @@ from scipy.interpolate import UnivariateSpline
 
 
 class BezierCurve:
-    def __init__(self, p0, p1, p2, p3, n_samples=20):
-        self.p0 = np.array(p0, dtype=float).flatten()
-        self.p1 = np.array(p1, dtype=float).flatten()
-        self.p2 = np.array(p2, dtype=float).flatten()
-        self.p3 = np.array(p3, dtype=float).flatten()
+    def __init__(self, p0=None, p1=None, p2=None, p3=None, knots=None, xs=None, ys=None, n_samples=20):
+        if p0 is not None:
+            self.p0 = np.array(p0, dtype=float).flatten()
+            self.p1 = np.array(p1, dtype=float).flatten()
+            self.p2 = np.array(p2, dtype=float).flatten()
+            self.p3 = np.array(p3, dtype=float).flatten()
 
-        self.knots, self.xs, self.ys = self.reparam_traj(M=n_samples)
+            self.knots, self.xs, self.ys = self.reparam_traj(M=n_samples)
+
+        else:
+            self.knots = knots
+            self.xs = xs
+            self.ys = ys
 
         # spline fits for x(s) and y(s)
         self.trajx = UnivariateSpline(self.knots, self.xs, k=3, s=0)

@@ -1,6 +1,9 @@
 import numpy as np
 
 from py_mpcc import MPCCore
+from py_mpcc import get_tubes
+from py_mpcc import vec_VecXd
+from py_mpcc import OccupancyGrid
 from py_mpcc import MPCType as Dynamics
 
 
@@ -38,6 +41,8 @@ class RobotMPC:
         self.dyn_model = params["DYNAMIC_MODEL"]
         print("dynamic model: ", self.dyn_model)
 
+        self.map_util = None
+
         # robot state: x, y, vx, vy
         self.robot_state = np.zeros(4, dtype=np.float64)
         self.robot_state[:2] = init_pos[:2]
@@ -62,6 +67,9 @@ class RobotMPC:
         self.traj_y = traj_y
 
         self.mpc.set_trajectory(self.traj_x, self.traj_y, 3, self.knots)
+
+    def set_occ_map(self, occupancy_grid):
+        self.map_util = OccupancyGrid(occupancy_grid.info.width, occupancy_grid.info.height, occupancy_grid.info.resolution, float(occupancy_grid.info.origin.position[0]), float(occupancy_grid.info.origin.position[1]), np.array(occupancy_grid.data), np.array([253, 254]), np.array([255]))
 
     def set_tubes(self, upper_coeffs, lower_coeffs):
 
@@ -178,6 +186,15 @@ class RobotMPC:
 
     def get_input_limits(self):
         return self.mpc.get_input_limits()
+
+    def get_horizon(self):
+        return self.mpc.get_horizon()
+
+    def get_tubes(self, d, N, max_dist, xs, ys, degree, knots, len_start, horizon):
+        tubes = vec_VecXd()
+        get_tubes(int(d), N, max_dist, xs, ys, degree, knots, knots[-1],
+                  len_start, horizon, self.map_util, tubes)
+        return tubes
 
     def _di_to_uni_cmd_mapper(self, state, u, kp=10.0):
 

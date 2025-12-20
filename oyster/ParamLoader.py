@@ -51,6 +51,7 @@ class ParameterLoader:
             "MIN_H_VAL": params["min_h_val"],
             "MAX_H_VAL": params["max_h_val"],
             "TUBE_DEGREE": params["tube_poly_degree"],
+            "MAX_TUBE_WIDTH": params["max_tube_width"],
         }
 
         self.param_dicts.append(ps)
