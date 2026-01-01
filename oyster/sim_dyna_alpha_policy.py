@@ -15,7 +15,7 @@ from configs.default import default_config
 from launch_training import deep_update_dict
 from oyster.rlkit.torch.sac.policies import MakeDeterministic
 from oyster.rlkit.samplers.util import rollout
-from oyster.BarnEnv import BarnEnv
+from DynamicAlphaEnv import TwoAlphaBoundsEnv
 
 
 def sim_policy(
@@ -33,7 +33,7 @@ def sim_policy(
     """
 
     # create multi-task environment and sample tasks
-    env = BarnEnv()
+    env = TwoAlphaBoundsEnv()
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
@@ -89,7 +89,7 @@ def sim_policy(
     # loop through tasks collecting rollouts
     all_rets = []
     # video_frames = []
-    total_rets = []
+    # total_rets = []
     for idx in eval_tasks:
         env.reset_task(idx)
         agent.clear_z()
@@ -109,39 +109,22 @@ def sim_policy(
             if n >= variant["algo_params"]["num_exp_traj_eval"]:
                 agent.infer_posterior(agent.context)
 
-            total_rets.append([env.total_reward, env.is_success])
+            # total_rets.append([env.total_reward, env.is_success])
+            print("reward was:", sum(paths[-1]["rewards"]))
+            print(paths[-1]["rewards"])
+            exit(0)
 
         all_rets.append([sum(p["rewards"]) for p in paths])
 
-        if save_video:
-            from datetime import datetime
-
-            current_datetime = datetime.now()
-            date_str = current_datetime.strftime("%H_%M_%S_%d-%m-%Y")
-            plt.savefig(f"./output/{date_str}")
-
-    # if save_video:
-    #     # save frames to file temporarily
-    #     temp_dir = os.path.join(path_to_exp, 'temp')
-    #     os.makedirs(temp_dir, exist_ok=True)
-    #     for i, frm in enumerate(video_frames):
-    #         frm.save(os.path.join(temp_dir, '%06d.jpg' % i))
-    #
-    #     video_filename=os.path.join(path_to_exp, 'video.mp4'.format(idx))
-    #     # run ffmpeg to make the video
-    #     os.system('ffmpeg -i {}/%06d.jpg -vcodec mpeg4 {}'.format(temp_dir, video_filename))
-    #     # delete the frames
-    #     shutil.rmtree(temp_dir)
-
     # compute average returns across tasks
-    n = min([len(a) for a in all_rets])
-    rets = [a[:n] for a in all_rets]
-    rets = np.mean(np.stack(rets), axis=0)
-    for i, ret in enumerate(rets):
-        print("trajectory {}, avg return: {} \n".format(i, ret))
+    # n = min([len(a) for a in all_rets])
+    # rets = [a[:n] for a in all_rets]
+    # rets = np.mean(np.stack(rets), axis=0)
+    # for i, ret in enumerate(rets):
+    #     print("trajectory {}, avg return: {} \n".format(i, ret))
 
-    print("total rets:")
-    print(total_rets)
+    # print("total rets:")
+    # print(total_rets)
 
 
 @click.command()
@@ -161,3 +144,4 @@ def main(config, path, num_trajs, deterministic, video):
 
 if __name__ == "__main__":
     main()
+

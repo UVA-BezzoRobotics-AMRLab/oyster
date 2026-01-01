@@ -34,7 +34,7 @@ class RobotEnv(gym.Env):
 
         # each task is loaded from parameter list
         self.task_loader = self.load_tasks()
-        self.traj_schedule = [5, 5]
+        self.traj_schedule = [10, 3]
 
         self.randomize_traj = randomize_traj
         self.traj_ids = [
@@ -105,8 +105,6 @@ class RobotEnv(gym.Env):
             # fast DI fails seed 18
             np.random.seed(22)
             traj_num = np.random.randint(0, 100)
-            # traj_num=58
-            traj_num=33
 
         # traj_num = 90
         self.set_traj_id(traj_num)
@@ -324,9 +322,9 @@ class RobotEnv(gym.Env):
 
         # schedule trajectories for curriculum learning
         if self.epoch != 0 and self.epoch_incremented:
-            if (
-                self.epoch % self.traj_schedule[1] == 0
-                or self.epoch == self.traj_schedule[0]
+            if(
+                self.epoch >= self.traj_schedule[0] 
+                and self.epoch % self.traj_schedule[1] == 0
             ):
 
                 self.curr_traj_idx += 1
@@ -439,7 +437,7 @@ class RobotEnv(gym.Env):
         w_progress = 10
         w_collision = 75
         w_alpha_exceeded = 20
-        w_alpha_reg = 3
+        w_alpha_reg = 1
 
         # safety_abv = RobotEnv.safety_penalty(h_abv)
         # safety_blw = RobotEnv.safety_penalty(h_blw)
@@ -451,8 +449,8 @@ class RobotEnv(gym.Env):
         if not solver_status:
             feasibility = -w_feas
 
-        # mid_abv = (alpha_abv - avg) ** 2
-        # mid_blw = (alpha_blw - avg) ** 2
+        mid_abv = (alpha_abv - avg) ** 2
+        mid_blw = (alpha_blw - avg) ** 2
 
         # reg_abv = action[0] ** 2
         # reg_blw = action[1] ** 2
@@ -467,8 +465,8 @@ class RobotEnv(gym.Env):
             + bounds_penalty
             + collision
             + feasibility
-            # - w_alpha_reg * mid_abv
-            # - w_alpha_reg * mid_blw
+            - w_alpha_reg * mid_abv
+            - w_alpha_reg * mid_blw
             # - w_alpha_reg * reg_abv
             # - w_alpha_reg * reg_blw
         )

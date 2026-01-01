@@ -56,16 +56,16 @@ def parse_xml_file(xml_file):
     return cylinder_data
 
 def generate_map_from_cylinders(cylinders, theta, dx, dy,
-                                obstacle_inflation=0.20,   # meters
+                                obstacle_inflation=0.30,   # meters
                                 inflation_cost=253,
                                 obstacle_cost=254):
     grid = OccupancyGrid()
 
-    grid.info.width = 400
-    grid.info.height = 400
+    grid.info.width = 600
+    grid.info.height = 600
     grid.info.resolution = 0.05
     grid.info.origin = Pose()
-    grid.info.origin.position = np.array([-10., -10., 0.])
+    grid.info.origin.position = np.array([-15., -15., 0.])
     grid.info.origin.orientation = np.array([0, 0, 0, 1])
 
     grid.data = [0] * grid.info.width * grid.info.height

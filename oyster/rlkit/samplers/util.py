@@ -41,8 +41,8 @@ def rollout(
     next_o = None
     path_length = 0
 
-    if animated:
-        env.render()
+    # if animated:
+    #     env.render()
     while path_length < max_path_length:
         a, agent_info = agent.get_action(o)
         next_o, r, d, env_info = env.step(a)

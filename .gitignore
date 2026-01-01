@@ -1,4 +1,6 @@
 envs/
+*.txt
+old_envs/
 output/
 __pycache__/
 *.egg*

@@ -19,13 +19,14 @@ from oyster.rlkit.torch.sac.agent import PEARLAgent
 from oyster.rlkit.launchers.launcher_util import setup_logger
 import oyster.rlkit.torch.pytorch_util as ptu
 from oyster.configs.default import default_config
-from oyster.BarnEnv import BarnEnv
+from DynamicAlphaEnv import TwoAlphaBoundsEnv
+# from oyster.Dynamicimport BarnEnv
 
 
 def experiment(variant):
 
     # create multi-task environment and sample tasks
-    env = BarnEnv()
+    env = TwoAlphaBoundsEnv()
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
@@ -159,3 +160,4 @@ def main(config, gpu, docker, debug):
 
 if __name__ == "__main__":
     main()
+

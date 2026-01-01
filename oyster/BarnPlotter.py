@@ -117,6 +117,10 @@ class BarnPlotter:
         vis = np.where(data < 0, 0, data)
 
         # world coordinate bounds
+        # x_min = ox
+        # x_max = ox + w * res
+        # y_min = oy
+        # y_max = oy + h * res
         x_min = ox
         x_max = ox + w * res
         y_min = oy
@@ -138,16 +142,16 @@ class BarnPlotter:
         if ax is None:
             ax = self.ax
 
-        margin = 2.0
+        # margin = 2.0
 
-        p_min = min(np.min(curve.xs), np.min(curve.ys))
-        p_max = max(np.max(curve.xs), np.max(curve.ys))
+        # p_min = min(np.min(curve.xs), np.min(curve.ys))
+        # p_max = max(np.max(curve.xs), np.max(curve.ys))
+        #
+        # x_min, y_min = p_min, p_min
+        # x_max, y_max = p_max, p_max
 
-        x_min, y_min = p_min, p_min
-        x_max, y_max = p_max, p_max
-
-        ax.set_xlim(x_min - margin, x_max + margin)
-        ax.set_ylim(y_min - margin, y_max + margin)
+        # ax.set_xlim(x_min - margin, x_max + margin)
+        # ax.set_ylim(y_min - margin, y_max + margin)
 
         (self.traj_line,) = ax.plot(curve.xs, curve.ys, "k--", label="trajectory")
 
@@ -163,28 +167,9 @@ class BarnPlotter:
             [], [], "b-", label="lower tube", linewidth=2.5
         )
 
-        # ss = np.linspace(0, curve.get_arclen(), 100)
-        # traj = np.vstack([curve.trajx(ss), curve.trajy(ss)]).T
-        #
-        # tangents = np.column_stack([curve.trajx_d(ss), curve.trajy_d(ss)])
-        # tangents /= np.linalg.norm(tangents, axis=1, keepdims=True)
-        #
-        # # compute normals
-        # normals = np.column_stack([-tangents[:, 1], tangents[:, 0]])
-        #
-        # upper_d = np.polyval(upper_coeffs[::-1], ss)
-        # lower_d = np.polyval(lower_coeffs[::-1], ss)
-        #
-        # # offset trajectory
-        # upper = traj + upper_d[:, None] * normals
-        # lower = traj - lower_d[:, None] * normals
-
-        # ax.plot(
-        #     upper[:, 0], upper[:, 1], "r-", label="upper tube", alpha=0.3, linewidth=2.5
-        # )
-        # ax.plot(
-        #     lower[:, 0], lower[:, 1], "r-", label="lower tube", alpha=0.3, linewidth=2.5
-        # )
+        # markers for sampled tube points
+        (self.upper_tube_pts,) = ax.plot([], [], "ro", markersize=6)
+        (self.lower_tube_pts,) = ax.plot([], [], "bo", markersize=6)
 
     def plot_tubes(self, curve, robot_state, mpc, upper_coeffs, lower_coeffs):
 
@@ -210,6 +195,7 @@ class BarnPlotter:
         upper_d = np.polyval(upper_coeffs[::-1], tau)
         lower_d = np.polyval(lower_coeffs[::-1], tau)
 
+
         # offset trajectory
         upper = traj + upper_d[:, None] * normals
         lower = traj - lower_d[:, None] * normals
@@ -217,6 +203,21 @@ class BarnPlotter:
         # plot tubes
         self.upper_tube_line.set_data(upper[:, 0], upper[:, 1])
         self.lower_tube_line.set_data(lower[:, 0], lower[:, 1])
+
+        sample_tau = np.array([0.0, 0.5, 1.0])
+        remaining_len = len_stop - len_start
+        sample_tau = np.clip(sample_tau, 0.0, remaining_len)
+
+        idx = np.searchsorted(tau, sample_tau)
+
+        du = np.polyval(upper_coeffs[::-1], sample_tau)
+        dl = np.polyval(lower_coeffs[::-1], sample_tau)
+
+        upper_pts = traj[idx] + du[:, None] * normals[idx]
+        lower_pts = traj[idx] - dl[:, None] * normals[idx]
+
+        self.upper_tube_pts.set_data(upper_pts[:, 0], upper_pts[:, 1])
+        self.lower_tube_pts.set_data(lower_pts[:, 0], lower_pts[:, 1])
 
 
     def render(self, robot_state, current_ref, curve, mpc, upper_coeffs, lower_coeffs):
@@ -255,6 +256,11 @@ class BarnPlotter:
         self.alpha_lower_line.set_data(self.alpha_t, self.alpha_lower_hist)
 
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
+
+        x,y = robot_state[:2]
+        half_sz = 4
+        self.ax.set_xlim(x-half_sz, x+half_sz)
+        self.ax.set_ylim(y-half_sz, y+half_sz)
 
         for ax in [self.ax_alpha_upper, self.ax_alpha_lower]:
             ax.relim()

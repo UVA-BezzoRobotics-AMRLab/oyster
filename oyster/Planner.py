@@ -15,6 +15,9 @@ class PyPlanner:
         self.params = None
         self.planner = Planner()
 
+        self.max_horizon = 3.0
+        self.curr_horizon = self.max_horizon
+
     def set_params(self, params):
         self.params = params
         self.planner.set_params(params)
@@ -28,8 +31,15 @@ class PyPlanner:
     def set_costmap(self, cmap):
         self.planner.set_costmap(cmap)
 
-    def plan(self, horizon, path, polys):
-        self.planner.plan(horizon, path, polys)
+    def plan(self, path, polys):
+        status = self.planner.plan(self.curr_horizon, path, polys)
+
+        if status:
+            self.curr_horizon = self.max_horizon
+        else:
+            self.curr_horizon /= .9
+
+        return status
 
     def get_arclen_traj(self):
         traj = self.planner.get_arclen_traj()
