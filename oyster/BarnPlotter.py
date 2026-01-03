@@ -97,6 +97,8 @@ class BarnPlotter:
 
         (self.path_line,) = self.ax.plot([], [], "b-", linewidth=1.5)
 
+        (self.mpc_horizon,) = self.ax.plot([], [], "g", linewidth=3.0)
+
         self.init_grid(occ_grid)
 
         self.ax.add_patch(self.robot_patch)
@@ -198,7 +200,7 @@ class BarnPlotter:
 
         # offset trajectory
         upper = traj + upper_d[:, None] * normals
-        lower = traj - lower_d[:, None] * normals
+        lower = traj + lower_d[:, None] * normals
 
         # plot tubes
         self.upper_tube_line.set_data(upper[:, 0], upper[:, 1])
@@ -214,7 +216,7 @@ class BarnPlotter:
         dl = np.polyval(lower_coeffs[::-1], sample_tau)
 
         upper_pts = traj[idx] + du[:, None] * normals[idx]
-        lower_pts = traj[idx] - dl[:, None] * normals[idx]
+        lower_pts = traj[idx] + dl[:, None] * normals[idx]
 
         self.upper_tube_pts.set_data(upper_pts[:, 0], upper_pts[:, 1])
         self.lower_tube_pts.set_data(lower_pts[:, 0], lower_pts[:, 1])
@@ -251,6 +253,9 @@ class BarnPlotter:
         self.alpha_lower_hist.append(alpha_lower)
 
         self.traj_line.set_data(curve.xs, curve.ys)
+
+        horizon = np.array(mpc.get_horizon())
+        self.mpc_horizon.set_data(horizon[:, 1], horizon[:, 2])
 
         self.alpha_upper_line.set_data(self.alpha_t, self.alpha_upper_hist)
         self.alpha_lower_line.set_data(self.alpha_t, self.alpha_lower_hist)

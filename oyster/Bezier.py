@@ -133,4 +133,32 @@ class BezierCurve:
         ks = np.abs(cross) / np.linalg.norm(vels, axis=1) ** 3
 
         return np.max(ks)
-        
+ 
+    def compute_adjusted_ref(
+        self,
+        s,
+        ref_samples=11,
+        ref_len_sz=4,
+    ):
+        # sample locations along horizon
+        ss = np.linspace(0.0, ref_len_sz, ref_samples)
+
+        xs = np.zeros(ref_samples)
+        ys = np.zeros(ref_samples)
+
+        # final reference point (clamping)
+        px = self.xs[-1]
+        py = self.ys[-1]
+
+
+        ref_length = self.knots[-1]
+        for i, si in enumerate(ss):
+            s_query = si + s
+            if s_query <= ref_length:
+                xs[i] = self.trajx(s_query)
+                ys[i] = self.trajy(s_query)
+            else:
+                xs[i] = px
+                ys[i] = py
+
+        return xs, ys

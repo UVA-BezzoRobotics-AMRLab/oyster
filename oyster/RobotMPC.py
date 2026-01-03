@@ -1,42 +1,20 @@
+import os
+import pathlib
 import numpy as np
+import casadi as ca
 
+from pathlib import Path
 from py_mpcc import MPCCore
 from py_mpcc import get_tubes
 from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
+from py_mpcc import get_cbf_abv
 from py_mpcc import MPCType as Dynamics
 
 
 class RobotMPC:
 
     def __init__(self, init_pos, params):
-        # params = {
-        #     "DT": 0.1,
-        #     "STEPS": 10,
-        #     "ANGVEL": 3.2,
-        #     "LINVEL": 1.0,
-        #     "MAX_LINACC": 1.5,
-        #     "MAX_ANGA": 6.28,
-        #     "BOUND": 1e3,
-        #     "W_ANGVEL": 0.15,
-        #     "W_DANGVEL": 0.7,
-        #     "W_DA": 0.1,
-        #     "W_LAG": 100,
-        #     "W_CONTOUR": 0.8,
-        #     "W_SPEED": 0.1,
-        #     "REF_LENGTH": 6,
-        #     "REF_SAMPLES": 11,
-        #     "CLF_GAMMA": 0.5,
-        #     "CLF_W_LAG": 1,
-        #     "USE_CBF": False,
-        #     "CBF_ALPHA_ABV": 5.0,
-        #     "CBF_ALPHA_BLW": 5.0,
-        #     # "USE_CBF": True,
-        #     # "CBF_ALPHA_ABV": 1.05,
-        #     # "CBF_ALPHA_BLW": 1.05,
-        #     "CBF_COLINEAR": 0.1,
-        #     "CBF_PADDING": 0.1,
-        # }
 
         self.dyn_model = params["DYNAMIC_MODEL"]
         print("dynamic model: ", self.dyn_model)
@@ -61,6 +39,29 @@ class RobotMPC:
         self.mpc.load_params(params)
         self.params = self.mpc.get_params()
 
+        script_dir = Path(__file__).parent.absolute()
+        og_dir = os.getcwd()
+        cpp_dir = os.path.join(script_dir, "cpp")
+        os.chdir(cpp_dir)
+        cpp_files = pathlib.Path(cpp_dir).glob('*.cpp')
+        so_files = pathlib.Path(cpp_dir).glob('*.so')
+
+        if len(list(so_files)) == 0:
+            # assuming one . in fname
+            for file in cpp_files:
+                fname = str(file).split(".")[0]
+                os.system(f"gcc -fPIC -shared {fname}.cpp -o {fname}.so")
+
+        self.get_cbf_abv = ca.external('h_abv', os.path.join(cpp_dir, "./compute_cbf_abv.so"))
+        self.get_lfh_abv = ca.external('lfh_abv', os.path.join(cpp_dir, "./compute_lfh_abv.so"))
+        self.get_lgh_abv = ca.external('lgh_abv', os.path.join(cpp_dir, "./compute_lgh_abv.so"))
+
+        self.get_cbf_blw = ca.external('h_blw', os.path.join(cpp_dir, "./compute_cbf_blw.so"))
+        self.get_lfh_blw = ca.external('lfh_blw', os.path.join(cpp_dir, "./compute_lfh_blw.so"))
+        self.get_lgh_blw = ca.external('lgh_blw', os.path.join(cpp_dir, "./compute_lgh_blw.so"))
+
+        os.chdir(og_dir)
+
     def set_trajectory(self, traj_x, traj_y, knots):
         self.knots = knots
         self.traj_x = traj_x
@@ -79,7 +80,7 @@ class RobotMPC:
             lower_coeffs = np.zeros(7)
             lower_coeffs[0] = 100
 
-        self.mpc.set_tubes([upper_coeffs, -lower_coeffs])
+        self.mpc.set_tubes([upper_coeffs, lower_coeffs])
 
     def load_params(self, params):
         self.mpc.load_params(params)
@@ -100,6 +101,12 @@ class RobotMPC:
                 v = self.robot_state[3]
                 state[2] = v * np.cos(self.robot_state[2])
                 state[3] = v * np.sin(self.robot_state[2])
+
+            # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
+            #     v = np.linalg.norm(state[2:4])
+            #     if v < 1e-3:
+            #         # print("velocity really small, clipping")
+            #         state[2] = 1e-2
 
             u = self.mpc.solve(state, False)
         else:
@@ -166,7 +173,7 @@ class RobotMPC:
     def set_mpc_state(self, state):
         self.robot_state = state
 
-    def get_mpc_command(self):
+    def get_acc_command(self):
         return self.mpc.get_mpc_command()
 
     def get_solver_status(self):
@@ -195,6 +202,10 @@ class RobotMPC:
         get_tubes(int(d), N, max_dist, xs, ys, degree, knots, knots[-1],
                   len_start, horizon, self.map_util, tubes)
         return tubes
+
+    # def get_cbf_abv(self, x, d_abv_coeff, x_coeff, y_coeff):
+    #     return get_cbf_abv(x, d_abv_coeff, x_coeff, y_coeff)
+        
 
     def _di_to_uni_cmd_mapper(self, state, u, kp=10.0):
 

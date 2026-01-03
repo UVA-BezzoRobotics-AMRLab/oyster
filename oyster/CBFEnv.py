@@ -25,26 +25,10 @@ from MapLoader import parse_xml_file, generate_map_from_cylinders
 
 
 class RLObs(IntEnum):
-    # VEL_T = 0
-    # VEL_N = auto()
-    # D_ABV1 = auto()
-    # D_BLW1 = auto()
-    # D_ABV2 = auto()
-    # D_BLW2 = auto()
-    # D_ABV3 = auto()
-    # D_BLW3 = auto()
-    # D_SIGNED = auto()
-    # SIN_OBS_HEADING = auto()
-    # COS_OBS_HEADING = auto()
-    # CBF_ABV = auto()
-    # CBF_BLW = auto()
-
     CBF_ABV = 0
+    LFH_LGH_ABV = auto()
     CBF_BLW = auto()
-
-
-def normalize(val, min, max):
-    return (val - min) / (max - min)
+    LFH_LGH_BLW = auto()
 
 
 def action_unnormalize(val, min, max):
@@ -56,24 +40,22 @@ class CBFEnv(gym.Env):
 
     def __init__(
         self,
-        task={},
-        n_tasks=2,
-        randomize_tasks=False,
-        n_obs=100,
-        traj_id=None,
-        randomize_traj=False,
+        world_num=0,
+        N = 3
     ):
 
         super(CBFEnv, self).__init__()
 
-        self.state_dim = len(RLObs)
+        self.N_alpha = 2
+        self.N_horizon = N
+
+        self.state_dim = len(RLObs) * self.N_horizon + self.N_alpha
         self.action_dim = 2
 
         # each task is loaded from parameter list
         self.task_loader = self.load_tasks()
         self.traj_schedule = [30, 10]
 
-        self.randomize_traj = randomize_traj
         self.did_collide = False
 
         self.epoch = 0
@@ -112,9 +94,14 @@ class CBFEnv(gym.Env):
 
         self.planner.set_params(self.planner_params)
 
-        obstacles = parse_xml_file(
-            "/home/bezzo/Programs/BARN_dataset/world_files/world_296.world"
-        )
+        try:
+            obstacles = parse_xml_file(os.path.join(os.getenv("BARN_DATASET_PATH"), "world_files", f"world_{world_num}.world"))
+        except:
+            obstacles = None
+            print("[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
+                  "environment variable been set to it's top level directory location?")
+            exit(0)
+
         self.occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
         self.map_util = OccupancyGrid(
             self.occupancy_grid.info.width,
@@ -132,24 +119,25 @@ class CBFEnv(gym.Env):
 
         self.task_idx = 0
 
+        # i dont think these bounds every get used by the SAC algorithm
         self.low = np.array(
-            np.zeros(self.state_dim),
+            -2 * np.ones(self.state_dim),
             dtype=np.float64,
         )
 
         self.high = np.array(
-            np.ones(self.state_dim),
+            2 * np.ones(self.state_dim),
             dtype=np.float64,
         )
 
         self.observation_space = spaces.Box(self.low, self.high, dtype=np.float64)
         self.action_space = spaces.Box(
-            low=np.zeros(self.action_dim),
+            low=-np.ones(self.action_dim),
             high=np.ones(self.action_dim),
             dtype=np.float64,
         )
 
-        # for some reason this is needed for PEARL, but it can be
+        # for some reason _goal is needed for PEARL, but it can be
         # set to anything
         self._goal = None
         self.curve = None
@@ -157,13 +145,12 @@ class CBFEnv(gym.Env):
         self.plotter = None
         self.reset()
 
+
     def set_mpc(self, params):
 
         self.params = copy.deepcopy(params)
         self.dynamic_model = self.params["DYNAMIC_MODEL"]
-        # self.params["USE_CBF"] = False
-        # self.params["CBF_ALPHA_ABV"] = 2.5
-        # self.params["CBF_ALPHA_BLW"] = 2.5
+        self.params["USE_CBF"] = True
 
         init_pose = np.concatenate(([-2.25, -2.5], [np.pi / 2]))
         self.mpc = RobotMPC(init_pose, self.params)
@@ -173,7 +160,34 @@ class CBFEnv(gym.Env):
         self.upper_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
         self.upper_coeffs[0] = self.params["MAX_TUBE_WIDTH"] / 2.0
         self.lower_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
-        self.lower_coeffs[0] = self.params["MAX_TUBE_WIDTH"] / 2.0
+        self.lower_coeffs[0] = -self.params["MAX_TUBE_WIDTH"] / 2.0
+
+        # These values were computed empirically over 50k samples
+        obs_mu = np.zeros(len(RLObs))
+        obs_mu[RLObs.LFH_LGH_ABV] = -0.188003803
+        obs_mu[RLObs.CBF_ABV] = 0.121208923
+        obs_mu[RLObs.LFH_LGH_BLW] = -0.061815101
+        obs_mu[RLObs.CBF_BLW] = -0.306548636
+
+
+        obs_std = np.zeros(len(RLObs))
+        obs_std[RLObs.LFH_LGH_ABV] = 0.458712499
+        obs_std[RLObs.CBF_ABV] = 0.21908311
+        obs_std[RLObs.LFH_LGH_BLW] = 0.571774786
+        obs_std[RLObs.CBF_BLW] = 0.121597948
+
+        self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
+        self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
+
+        self.obs_mu[:-self.N_alpha] = np.tile(obs_mu, self.N_horizon)
+        self.obs_std[:-self.N_alpha] = np.tile(obs_std, self.N_horizon)
+
+        for i in range(self.N_alpha):
+            self.obs_mu[len(RLObs) * self.N_horizon + i] = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"])/2
+
+        for i in range(self.N_alpha):
+            self.obs_std[len(RLObs) * self.N_horizon + i] = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"])/4
+
 
     def load_tasks(self):
         param_path = os.path.join(os.path.dirname(__file__), "configs")
@@ -183,6 +197,12 @@ class CBFEnv(gym.Env):
                 fnames.append(os.path.join(param_path, file))
 
         return ParameterLoader(fnames)
+
+    def normalize_obs(self, obs):
+        # 95% of observed data will be within -1 to 1
+        z = (obs - self.obs_mu) / (2*self.obs_std)
+        z = np.clip(z, self.low, self.high)
+        return z
 
     def step(self, action):
         self.step_count += 1
@@ -194,6 +214,7 @@ class CBFEnv(gym.Env):
         len_start = self.mpc.get_s_from_pose(self.robot_state[:2])
         self.get_and_set_tubes(len_start)
 
+        action = np.array(action)
         action = action_unnormalize(
             action, self.params["MIN_ALPHA_DOT"], self.params["MAX_ALPHA_DOT"]
         )
@@ -214,40 +235,20 @@ class CBFEnv(gym.Env):
         idx = (np.abs(self.curve.knots.flatten() - len_start)).argmin()
         self.current_ref = (self.curve.xs[idx], self.curve.ys[idx])
 
-        obs = self._get_obs()
+        obs = self.get_obs()
 
         v_max = self.params["LINVEL"]
-        mpc_state = self.mpc.get_mpc_state()
 
-        # distance to nearest bound (per alpha)
-        rl_min_alpha = self.params["MIN_ALPHA"] - 1.0
-        rl_max_alpha = self.params["MAX_ALPHA"] + 1.0
-        norm_min_alpha = normalize(self.params["MIN_ALPHA"], rl_min_alpha, rl_max_alpha)
-        norm_max_alpha = normalize(self.params["MAX_ALPHA"], rl_min_alpha, rl_max_alpha)
-        d = np.minimum(
-            obs - norm_min_alpha,
-            norm_max_alpha - obs,
-        )
+        is_colliding = self.map_util.is_occupied(self.robot_state[0], self.robot_state[1], "inflated")
 
         # ---------------- reward ----------------
-        # interior reward (maximize margin)
-        reward = float(np.sum(d))
+        reward = self.get_reward(obs, is_colliding)
 
-        # smooth penalty when violated
-        violation = d < 0
-        if np.any(violation):
-            reward -= 0.1 * np.sum((-d[violation]) ** 2)
-
-        if np.any(obs < -1.0) or np.any(obs > 1.0):
-            reward = -5.0
-            done = True
-            obs = obs.clip(-1, 1)
-
-        is_done = self.step_count >= 190
+        is_done = self.step_count >= 190 or (len_start >= self.curve.knots[-1] - 1e-2) or is_colliding
 
         self.total_reward += reward
         return (
-            obs,
+            self.normalize_obs(obs),
             reward,
             is_done,
             {},
@@ -257,6 +258,7 @@ class CBFEnv(gym.Env):
         self.did_collide = False
         self.total_reward = 0
         self.is_success = False
+        self.step_count = 0
 
         if self.plotter:
             self.plotter.close()
@@ -269,6 +271,9 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
+        params["CBF_ALPHA_ABV"] = 2.5
+        params["CBF_ALPHA_BLW"] = 2.5
+
         self.set_mpc(params)
         self.curve = None
 
@@ -277,9 +282,51 @@ class CBFEnv(gym.Env):
         # self.robot_state = np.zeros(4, dtype=np.float64)
         # self.mpc.set_mpc_state(self.robot_state)
 
-        obs = np.zeros(len(RLObs), dtype=np.float64)
-        obs[RLObs.CBF_ABV] = normalize(params["CBF_ALPHA_ABV"], min_alpha, max_alpha)
-        obs[RLObs.CBF_BLW] = normalize(params["CBF_ALPHA_BLW"], min_alpha, max_alpha)
+        obs = np.zeros(self.state_dim, dtype=np.float64)
+        obs[-self.N_alpha:] = [params["CBF_ALPHA_ABV"], params["CBF_ALPHA_BLW"]]
+        return self.normalize_obs(obs)
+
+    def get_obs(self):
+        horizon = np.array(self.mpc.get_horizon())
+        if horizon.shape[0] < self.N_horizon:
+            raise ValueError("Horizon shape", horizon.shape[0], "is smaller than N_horizon set", 
+                             self.N_horizon)
+
+        xs, ys = self.curve.compute_adjusted_ref(0)
+
+        obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
+        for i in range(self.N_horizon):
+            state = horizon[i,1:7]
+            acc = horizon[i,7:]
+
+            cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
+            lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
+            lgh_abv = self.mpc.get_lgh_abv(state, self.upper_coeffs, xs, ys)
+            lghu_abv = lgh_abv[:2] @ acc
+
+            cbf_blw = self.mpc.get_cbf_blw(state, self.lower_coeffs, xs, ys)
+            lfh_blw = self.mpc.get_lfh_blw(state, self.lower_coeffs, xs, ys)
+            lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
+            lghu_blw = lgh_blw[:2] @ acc
+
+            # print("cbf_abv", cbf_abv)
+            # print("cbf_blw", cbf_blw)
+            # print("lfh_lgh_abv", lfh_abv + lghu_abv)
+            # print("lfh_lgh_blw", lfh_blw + lghu_blw)
+
+            obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
+            obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
+            obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
+            obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
+
+            # obs[i * len(RLObs) : (i+1)*len(RLObs)] = [
+            #     float(cbf_abv), 
+            #     float(lfh_abv + lghu_abv),
+            #     float(cbf_blw),
+            #     float(lfh_blw + lghu_blw),
+            # ]
+
+        obs[-self.N_alpha:] = [self.params["CBF_ALPHA_ABV"], self.params["CBF_ALPHA_BLW"]]
 
         return obs
 
@@ -326,30 +373,62 @@ class CBFEnv(gym.Env):
         self.task_idx = idx
         self.reset()
 
-    def _get_obs(self):
-
-        params = self.mpc.get_params()
-        alpha_abv = params["CBF_ALPHA_ABV"]
-        alpha_blw = params["CBF_ALPHA_BLW"]
-
-        min_alpha = params["MIN_ALPHA"]
-        max_alpha = params["MAX_ALPHA"]
-        rl_min_alpha = min_alpha - 1.0
-        rl_max_alpha = max_alpha + 1.0
-
-        obs = np.zeros(len(RLObs), dtype=np.float64)
-        obs[RLObs.CBF_ABV] = normalize(alpha_abv, rl_min_alpha, rl_max_alpha)
-        obs[RLObs.CBF_BLW] = normalize(alpha_blw, rl_min_alpha, rl_max_alpha)
-
-        return obs
-
-    @staticmethod
-    def get_reward(obs, solver_status, progress, action, exceed_count, is_done, params):
+    def get_reward(self, obs, is_colliding):
         reward = 0
+
+        min_const_abv = 1e6
+        min_const_blw = 1e6
+        for i in range(self.N_horizon):
+            cbf_abv = obs[i * len(RLObs) + RLObs.CBF_ABV]
+            lfh_lghu_abv = obs[i * len(RLObs) + RLObs.LFH_LGH_ABV]
+
+            cbf_blw = obs[i * len(RLObs) + RLObs.CBF_BLW]
+            lfh_lghu_blw = obs[i * len(RLObs) + RLObs.LFH_LGH_BLW]
+
+            const_abv = lfh_lghu_abv + cbf_abv * obs[-2]
+            const_blw = lfh_lghu_blw + cbf_blw * obs[-1]
+
+            # print(i, "cbf_abv", cbf_abv)
+            # print(i, "cbf_blw", cbf_blw)
+            # print(i, "lfh_lgh_abv", lfh_lghu_abv)
+            # print(i, "lfh_lgh_blw", lfh_lghu_blw)
+            # print(i, "const_abv", const_abv)
+            # print(i, "const_blw", const_blw)
+
+            min_const_abv = min(min_const_abv, const_abv)
+            min_const_blw = min(min_const_blw, const_blw)
+
+        # reward model for having large constraint values
+        worst_const = min(min_const_abv, min_const_blw)
+        # print("WORST_CONST", worst_const)
+        reward += 0.7 * np.tanh(worst_const)
+        # print("CONST REWARD", reward)
+
+        avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
+        alphas = (obs[-self.N_alpha:] - avg) / avg
+        d = np.minimum(alphas - (-1.), 1. - alphas)
+
+        # penalize alpha being too large
+        # penalize alpha leaving prescribed bounds
+        alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
+        # print("largeness:", alpha_reward)
+        alpha_reward -= np.sum((d[d < 0])**2)
+
+        # print("ALPHA_REWARD:", alpha_reward)
+
+        reward += alpha_reward
+
+        if is_colliding:
+            reward = -1.0
+
+        # print("REWARD", reward)
 
         return reward
 
-    def gen_and_set_tubes(self, len_start):
+    def get_and_set_tubes(self, len_start):
+        if not hasattr(self, "knots"):
+            return
+
         ref_len = self.params["REF_LENGTH"]
         horizon = ref_len
         if len_start + horizon > self.knots[-1]:
@@ -370,11 +449,18 @@ class CBFEnv(gym.Env):
 
             if len(new_tubes[0]) > 0:
                 self.upper_coeffs = new_tubes[0]
-                self.lower_coeffs = -new_tubes[1]
+                self.lower_coeffs = new_tubes[1]
 
-            self.mpc.set_tubes(self.upper_coeffs, self.lower_coeffs)
+        else:
+            self.upper_coeffs = [0] * int(self.params["TUBE_DEGREE"]+1)
+            self.upper_coeffs[0] = 100
+            self.lower_coeffs = [0] * int(self.params["TUBE_DEGREE"]+1)
+            self.lower_coeffs[0] = -100
+
+        self.mpc.set_tubes(self.upper_coeffs, self.lower_coeffs)
 
     def update_trajectory(self):
+
         status = None
         jpsPath = vec_Vec2d()
         polys = vec_MatX4d()
@@ -445,17 +531,68 @@ class CBFEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    env = CBFEnv(n_obs=150, randomize_traj=True)
 
-    i = 0
+    import csv
+    class RunningStats:
+        def __init__(self, dim):
+            self.n = 0
+            self.mean = np.zeros(dim)
+            self.M2 = np.zeros(dim)
+
+        def update(self, x):
+            self.n += 1
+            delta = x - self.mean
+            self.mean += delta / self.n
+            delta2 = x - self.mean
+            self.M2 += delta * delta2
+
+        @property
+        def var(self):
+            return self.M2 / max(self.n - 1, 1)
+
+        @property
+        def std(self):
+            return np.sqrt(self.var)
+
+    env = CBFEnv(world_num = 296)
+    stats = RunningStats(4)
+
     done = False
-    env.reset_task(1)
+    world_count = 0
+    obs_count = 0
     while not done:
-        _, reward, done, _ = env.step([0, 0])
-        obs = env._get_obs()
-        # print("signed:", obs[RLObs.D_SIGNED])
-        # print("vel T:", obs[RLObs.VEL_T])
-        # print("vel N:", obs[RLObs.VEL_N])
+        obs, reward, done, _ = env.step([0, 0])
         env.render()
-        i += 1
-        # time.sleep(.2)
+        # action = input()
+
+    # with open("obs_log.csv", "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #
+    #     for i in range(0, 300, 3):
+    #
+    #         done = False
+    #         for j in range(6):
+    #
+    #             if obs_count > 5e4:
+    #                 break
+    #
+    #             env.reset_task(j)
+    #             done = False
+    #
+    #             while not done:
+    #                 try:
+    #                     obs, reward, done, _ = env.step([0, 0])
+    #                 except:
+    #                     break
+    #
+    #                 obs_count += 1
+    #                 writer.writerow(obs)
+    #                 stats.update(obs)
+    #
+    #             if done:
+    #                 world_count += 1
+    #
+    #         print("MEAN:", stats.mean)
+    #         print("STD:", stats.std)
+    #         print("ROW_COUNT:", obs_count)
+    #         print("WORLD_COUNT:", world_count)

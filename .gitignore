@@ -1,5 +1,9 @@
+*.DS_Store
+*.xlsx
+cpp/
 envs/
 *.txt
+*.csv
 old_envs/
 output/
 __pycache__/
