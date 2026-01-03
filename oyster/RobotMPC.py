@@ -8,7 +8,6 @@ from py_mpcc import MPCCore
 from py_mpcc import get_tubes
 from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
-from py_mpcc import get_cbf_abv
 from py_mpcc import MPCType as Dynamics
 
 
