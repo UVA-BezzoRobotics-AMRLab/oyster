@@ -166,17 +166,17 @@ class CBFEnv(gym.Env):
 
         # These values were computed empirically over 50k samples
         obs_mu = np.zeros(len(RLObs))
-        obs_mu[RLObs.LFH_LGH_ABV] = -0.188003803
-        obs_mu[RLObs.CBF_ABV] = 0.121208923
-        obs_mu[RLObs.LFH_LGH_BLW] = -0.061815101
-        obs_mu[RLObs.CBF_BLW] = -0.306548636
+        obs_mu[RLObs.CBF_ABV] = 0.31351834
+        obs_mu[RLObs.LFH_LGH_ABV] = -0.08118895
+        obs_mu[RLObs.CBF_BLW] = 0.30968506
+        obs_mu[RLObs.LFH_LGH_BLW] = -0.06886277
 
 
         obs_std = np.zeros(len(RLObs))
-        obs_std[RLObs.LFH_LGH_ABV] = 0.458712499
-        obs_std[RLObs.CBF_ABV] = 0.21908311
-        obs_std[RLObs.LFH_LGH_BLW] = 0.571774786
-        obs_std[RLObs.CBF_BLW] = 0.121597948
+        obs_std[RLObs.CBF_ABV] = 0.11640778
+        obs_std[RLObs.LFH_LGH_ABV] = 0.43526554
+        obs_std[RLObs.CBF_BLW] = 0.11402489
+        obs_std[RLObs.LFH_LGH_BLW] = 0.41840122
 
         self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
         self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
