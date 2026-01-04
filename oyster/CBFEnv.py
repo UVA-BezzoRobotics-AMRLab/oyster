@@ -1,7 +1,9 @@
 import os
+import csv
 import gym
 import time
 import copy
+import click
 import numpy as np
 
 from enum import IntEnum, auto
@@ -236,7 +238,7 @@ class CBFEnv(gym.Env):
         self.current_ref = (self.curve.xs[idx], self.curve.ys[idx])
 
         obs = self.get_obs()
-        print("obs:", self.normalize_obs(obs))
+        # print("obs:", self.normalize_obs(obs))
 
         v_max = self.params["LINVEL"]
 
@@ -249,7 +251,8 @@ class CBFEnv(gym.Env):
 
         self.total_reward += reward
         return (
-            self.normalize_obs(obs),
+            # self.normalize_obs(obs),
+            obs,
             reward,
             is_done,
             {},
@@ -541,77 +544,86 @@ class CBFEnv(gym.Env):
         return status, jpsPath, polys
 
 
+class RunningStats:
+    def __init__(self, dim):
+        self.n = 0
+        self.mean = np.zeros(dim)
+        self.M2 = np.zeros(dim)
+
+    def update(self, x):
+        self.n += 1
+        delta = x - self.mean
+        self.mean += delta / self.n
+        delta2 = x - self.mean
+        self.M2 += delta * delta2
+
+    @property
+    def var(self):
+        return self.M2 / max(self.n - 1, 1)
+
+    @property
+    def std(self):
+        return np.sqrt(self.var)
+
+
+@click.command()
+@click.option("--record_data", is_flag=True, default=False)
+def main(record_data):
+
+    if not record_data:
+        env = CBFEnv(world_num = 296)
+        env.reset_task(1)
+        done = False
+        world_count = 0
+        obs_count = 0
+        while not done:
+            obs, reward, done, _ = env.step([0, 0])
+            env.render()
+
+        env.reset_task(4)
+        done = False
+        while not done:
+            obs, reward, done, _ = env.step([0, 0])
+            env.render()
+
+    else:
+        world_count = 0
+        obs_count = 0
+        n_samples = 1e5
+        done = False
+        stats = RunningStats(14)
+        with open("obs_log.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+
+            for i in range(0, 300, 3):
+                env = CBFEnv(world_num = i)
+
+                done = False
+                for j in range(6):
+
+                    env.reset_task(j)
+                    done = False
+
+                    while not done:
+                        try:
+                            obs, reward, done, _ = env.step([0, 0])
+                        except:
+                            break
+
+                        if obs_count > n_samples:
+                            break
+
+                        obs_count += 1
+                        writer.writerow(obs)
+                        stats.update(obs)
+
+                    if done:
+                        world_count += 1
+
+                print("MEAN:", stats.mean)
+                print("STD:", stats.std)
+                print("ROW_COUNT:", obs_count)
+
 if __name__ == "__main__":
+    main()
 
-    import csv
-    class RunningStats:
-        def __init__(self, dim):
-            self.n = 0
-            self.mean = np.zeros(dim)
-            self.M2 = np.zeros(dim)
-
-        def update(self, x):
-            self.n += 1
-            delta = x - self.mean
-            self.mean += delta / self.n
-            delta2 = x - self.mean
-            self.M2 += delta * delta2
-
-        @property
-        def var(self):
-            return self.M2 / max(self.n - 1, 1)
-
-        @property
-        def std(self):
-            return np.sqrt(self.var)
-
-    env = CBFEnv(world_num = 296)
-    stats = RunningStats(4)
-
-    env.reset_task(1)
-    done = False
-    world_count = 0
-    obs_count = 0
-    while not done:
-        obs, reward, done, _ = env.step([0, 0])
-        env.render()
-
-    env.reset_task(4)
-    done = False
-    world_count = 0
-    obs_count = 0
-    while not done:
-        obs, reward, done, _ = env.step([0, 0])
-        env.render()
-
-    # with open("obs_log.csv", "w", newline="") as f:
-    #     writer = csv.writer(f)
-    #
-    #     for i in range(0, 300, 3):
-    #
-    #         done = False
-    #         for j in range(6):
-    #
-    #             if obs_count > 5e4:
-    #                 break
-    #
-    #             env.reset_task(j)
-    #             done = False
-    #
-    #             while not done:
-    #                 try:
-    #                     obs, reward, done, _ = env.step([0, 0])
-    #                 except:
-    #                     break
-    #
-    #                 obs_count += 1
-    #                 writer.writerow(obs)
-    #                 stats.update(obs)
-    #
-    #             if done:
-    #                 world_count += 1
-    #
-    #         print("MEAN:", stats.mean)
-    #         print("STD:", stats.std)
-    #         print("ROW_COUNT:", obs_count)
-    #         print("WORLD_COUNT:", world_count)
