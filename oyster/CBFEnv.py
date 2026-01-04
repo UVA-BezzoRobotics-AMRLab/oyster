@@ -551,6 +551,9 @@ class RunningStats:
         self.M2 = np.zeros(dim)
 
     def update(self, x):
+        if np.any(np.abs(x) > 10) or np.any(np.isnan(x)):
+            return
+
         self.n += 1
         delta = x - self.mean
         self.mean += delta / self.n
@@ -595,7 +598,7 @@ def main(record_data):
         with open("obs_log.csv", "w", newline="") as f:
             writer = csv.writer(f)
 
-            for i in range(0, 300, 3):
+            for i in range(0, 300):
                 env = CBFEnv(world_num = i)
 
                 done = False
