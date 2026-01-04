@@ -12,6 +12,7 @@ __all__ = [
     "configs",
     "launch_training",
     "RobotEnv",
+    "CBFEnv",
     "BarnEnv",
     "ParamLoader",
 ]

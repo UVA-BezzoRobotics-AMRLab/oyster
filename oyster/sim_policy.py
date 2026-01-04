@@ -15,7 +15,7 @@ from configs.default import default_config
 from launch_training import deep_update_dict
 from oyster.rlkit.torch.sac.policies import MakeDeterministic
 from oyster.rlkit.samplers.util import rollout
-from oyster.BarnEnv import BarnEnv
+from oyster.CBFEnv import CBFEnv
 
 
 def sim_policy(
@@ -33,7 +33,7 @@ def sim_policy(
     """
 
     # create multi-task environment and sample tasks
-    env = BarnEnv()
+    env = CBFEnv(world_num=296)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
@@ -80,7 +80,7 @@ def sim_policy(
         agent = MakeDeterministic(agent)
 
     # load trained weights (otherwise simulate random policy)
-    itr = 79
+    itr = 56
     context_encoder.load_state_dict(
         torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"))
     )

@@ -45,12 +45,14 @@ class RobotMPC:
         cpp_files = pathlib.Path(cpp_dir).glob('*.cpp')
         so_files = pathlib.Path(cpp_dir).glob('*.so')
 
-        if len(list(so_files)) == 0:
+        if len(list(so_files)) != 8:
             # assuming one . in fname
             for file in cpp_files:
                 fname = str(file).split(".")[0]
                 os.system(f"gcc -fPIC -shared {fname}.cpp -o {fname}.so")
 
+        self.get_xrdot = ca.external('xr_dot', os.path.join(cpp_dir, "./compute_xrdot.so"))
+        self.get_yrdot = ca.external('yr_dot', os.path.join(cpp_dir, "./compute_yrdot.so"))
         self.get_cbf_abv = ca.external('h_abv', os.path.join(cpp_dir, "./compute_cbf_abv.so"))
         self.get_lfh_abv = ca.external('lfh_abv', os.path.join(cpp_dir, "./compute_lfh_abv.so"))
         self.get_lgh_abv = ca.external('lgh_abv', os.path.join(cpp_dir, "./compute_lgh_abv.so"))
@@ -104,7 +106,6 @@ class RobotMPC:
             # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
             #     v = np.linalg.norm(state[2:4])
             #     if v < 1e-3:
-            #         # print("velocity really small, clipping")
             #         state[2] = 1e-2
 
             u = self.mpc.solve(state, False)

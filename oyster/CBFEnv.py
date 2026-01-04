@@ -236,6 +236,7 @@ class CBFEnv(gym.Env):
         self.current_ref = (self.curve.xs[idx], self.curve.ys[idx])
 
         obs = self.get_obs()
+        print("obs:", self.normalize_obs(obs))
 
         v_max = self.params["LINVEL"]
 
@@ -244,7 +245,7 @@ class CBFEnv(gym.Env):
         # ---------------- reward ----------------
         reward = self.get_reward(obs, is_colliding)
 
-        is_done = self.step_count >= 190 or (len_start >= self.curve.knots[-1] - 1e-2) or is_colliding
+        is_done = self.step_count >= 190 or (len_start >= self.curve.knots[-1] - 1) or is_colliding
 
         self.total_reward += reward
         return (
@@ -309,10 +310,20 @@ class CBFEnv(gym.Env):
             lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
             lghu_blw = lgh_blw[:2] @ acc
 
-            # print("cbf_abv", cbf_abv)
-            # print("cbf_blw", cbf_blw)
-            # print("lfh_lgh_abv", lfh_abv + lghu_abv)
-            # print("lfh_lgh_blw", lfh_blw + lghu_blw)
+            if np.isnan(cbf_abv) or np.isnan(cbf_blw):
+                print("STATE", state)
+                print("upper", self.upper_coeffs)
+                print("lower", self.lower_coeffs)
+                print(xs)
+                print(ys)
+
+                print("xr_dot", self.mpc.get_xrdot(state, xs, ys))
+                print("yr_dot", self.mpc.get_yrdot(state, xs, ys))
+
+                print(i, "cbf_abv", cbf_abv)
+                print(i, "cbf_blw", cbf_blw)
+                print(i, "lfh_lgh_abv", lfh_abv + lghu_abv)
+                print(i, "lfh_lgh_blw", lfh_blw + lghu_blw)
 
             obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
             obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
@@ -557,13 +568,21 @@ if __name__ == "__main__":
     env = CBFEnv(world_num = 296)
     stats = RunningStats(4)
 
+    env.reset_task(1)
     done = False
     world_count = 0
     obs_count = 0
     while not done:
         obs, reward, done, _ = env.step([0, 0])
         env.render()
-        # action = input()
+
+    env.reset_task(4)
+    done = False
+    world_count = 0
+    obs_count = 0
+    while not done:
+        obs, reward, done, _ = env.step([0, 0])
+        env.render()
 
     # with open("obs_log.csv", "w", newline="") as f:
     #     writer = csv.writer(f)
