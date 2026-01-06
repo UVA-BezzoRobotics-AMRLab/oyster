@@ -45,7 +45,7 @@ class RobotMPC:
         cpp_files = pathlib.Path(cpp_dir).glob('*.cpp')
         so_files = pathlib.Path(cpp_dir).glob('*.so')
 
-        if len(list(so_files)) != 19:
+        if len(list(so_files)) != 21:
             # assuming one . in fname
             for file in cpp_files:
                 fname = str(file).split(".")[0]
@@ -53,11 +53,15 @@ class RobotMPC:
 
         self.get_xr= ca.external('xr', os.path.join(cpp_dir, "./compute_xr.so"))
         self.get_yr= ca.external('yr', os.path.join(cpp_dir, "./compute_yr.so"))
+
         self.get_spline_x = ca.external('xr', os.path.join(cpp_dir, "./compute_spline_x.so"))
         self.get_spline_y = ca.external('yr', os.path.join(cpp_dir, "./compute_spline_y.so"))
 
         self.get_xrdot = ca.external('xr_dot', os.path.join(cpp_dir, "./compute_xrdot.so"))
         self.get_yrdot = ca.external('yr_dot', os.path.join(cpp_dir, "./compute_yrdot.so"))
+
+        self.get_obs_dirx = ca.external('obs_dirx', os.path.join(cpp_dir, "./compute_obs_dirx.so"))
+        self.get_obs_diry = ca.external('obs_diry', os.path.join(cpp_dir, "./compute_obs_diry.so"))
 
         self.get_p_abv = ca.external('p_abv', os.path.join(cpp_dir, "./compute_p_abv.so"))
         self.get_p_blw = ca.external('p_blw', os.path.join(cpp_dir, "./compute_p_blw.so"))

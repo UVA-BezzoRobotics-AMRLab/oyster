@@ -251,7 +251,7 @@ class CBFEnv(gym.Env):
         # ---------------- reward ----------------
         reward = self.get_reward(obs, is_colliding)
 
-        is_done = self.step_count >= 190 or (len_start >= self.curve.knots[-1] - 1) or is_colliding
+        is_done = self.step_count >= 250 or (len_start >= self.curve.knots[-1] - .2) or is_colliding
 
         if self.manual_step:
             a = input()
@@ -336,11 +336,29 @@ class CBFEnv(gym.Env):
             d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
             h_blw = (signed_d - d_blw) * np.exp(-p_blw)
             if i == 0:
-                print("signed_d (casadi)", signed_d)
                 tmp_p = self.curve.pos(len_start)
-                print("signed_d (manual)", np.linalg.norm(tmp_p-state[:2]))
+                adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
+                adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
+                man_signed_d =  np.linalg.norm(tmp_p-state[:2])
+                man_d_blw = np.polyval(self.lower_coeffs[::-1], 0)
+                print("signed_d (casadi)", signed_d)
+                print("signed_d (manual)", man_signed_d)
+                print("signed_d (adjust)", adj_man_sd)
                 print("d_blw (casadi)", d_blw)
-                print("d_blw (manual)", np.polyval(self.lower_coeffs[::-1], 0))
+                print("d_blw (manual)", man_d_blw)
+                obs_dir = [self.mpc.get_obs_dirx(state, xs, ys), self.mpc.get_obs_diry(state, xs, ys)]
+                print("obs_dir (casadi)", obs_dir)
+                tmp_v = self.curve.vel(len_start)
+                tmp_n = np.array([-tmp_v[1], tmp_v[0]])
+                tmp_n = tmp_n / np.linalg.norm(tmp_n)
+                print("obs_dir (manual)", tmp_n)
+
+                # self.obs_dirx = -sin(self.phi_r)
+                # self.obs_diry = cos(self.phi_r)
+
+                signed_d = (state[0] - tmp_p[0]) * obs_dir[0] + (state[1]- tmp_p[1]) * obs_dir[1]
+                print("signed_d(man caasdi calc)", signed_d)
+
             # print(i, "h_blw manual:", h_blw)
             # print(i, "h_blw casadi:", cbf_blw)
             if np.any(np.isnan(obs)):
@@ -459,8 +477,8 @@ class CBFEnv(gym.Env):
         # reward model for having large constraint values
         worst_const = min(min_const_abv, min_const_blw)
         # print("WORST_CONST", worst_const)
-        reward += 0.7 * np.tanh(worst_const)
-        print("CONST REWARD", reward)
+        reward += 0.12 * np.tanh(worst_const)
+        # print("CONST REWARD", reward)
 
         avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
         alphas = (obs[-self.N_alpha:] - avg) / avg
@@ -472,14 +490,15 @@ class CBFEnv(gym.Env):
         # alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
 
         # print("largeness:", alpha_reward)
-        alpha_reward -= np.sum((d[d < 0])**2)
+        alpha_reward -= (1./6) * np.sum((d[d < 0])**2)
 
-        print("ALPHA_REWARD:", alpha_reward)
+        # print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
         if is_colliding:
-            reward = -1.0
+            print("total reward before collision:", self.total_reward)
+            reward = -5.0
 
         # print("REWARD", reward)
 
@@ -640,6 +659,7 @@ def main(record_data, manual_step):
         world_count = 0
         obs_count = 0
         n_samples = 1e5
+        # n_samples = 1e2
         done = False
         stats = RunningStats(12)
         with open("obs_log.csv", "w", newline="") as f:
@@ -697,6 +717,17 @@ def main(record_data, manual_step):
         print("CBF_DOT_ABV_STD:",  np.average(cbf_dot_abv_std))
         print("CBF_BLW_STD:",      np.average(cbf_blw_std))
         print("CBF_DOT_BLW_STD:",  np.average(cbf_dot_blw_std))
+
+        print("Code -------------")
+        print("obs_mu[RLObs.CBF_ABV]",     np.round(np.average(cbf_abv_mu), 4))
+        print("obs_mu[RLObs.LFH_LGH_ABV]", np.round(np.average(cbf_dot_abv_mu), 4))
+        print("obs_mu[RLObs.CBF_BLW]",     np.round(np.average(cbf_blw_mu), 4))
+        print("obs_mu[RLObs.LFH_LGH_BLW]:", np.round(np.average(cbf_dot_blw_mu), 4))
+
+        print("obs_std[RLObs.CBF_ABV]",      np.round(np.average(cbf_abv_std), 4))
+        print("obs_std[RLObs.LFH_LGH_ABV]",  np.round(np.average(cbf_dot_abv_std), 4))
+        print("obs_std[RLObs.CBF_BLW]",      np.round(np.average(cbf_blw_std), 4))
+        print("obs_std[RLObs.LFH_LGH_BLW]",  np.round(np.average(cbf_dot_blw_std), 4))
 
         print("ROW_COUNT:", obs_count)
 
