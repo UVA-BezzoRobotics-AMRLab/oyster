@@ -150,7 +150,6 @@ class BezierCurve:
         px = self.xs[-1]
         py = self.ys[-1]
 
-
         ref_length = self.knots[-1]
         for i, si in enumerate(ss):
             s_query = si + s

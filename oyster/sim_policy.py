@@ -19,7 +19,7 @@ from oyster.CBFEnv import CBFEnv
 
 
 def sim_policy(
-    variant, path_to_exp, num_trajs=1, deterministic=False, save_video=False
+    variant, path_to_exp, num_trajs=1, deterministic=False, save_video=False, manual_step=False
 ):
     """
     simulate a trained policy adapting to a new task
@@ -33,7 +33,7 @@ def sim_policy(
     """
 
     # create multi-task environment and sample tasks
-    env = CBFEnv(world_num=296)
+    env = CBFEnv(world_num=296, manual_step=manual_step)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
@@ -80,7 +80,7 @@ def sim_policy(
         agent = MakeDeterministic(agent)
 
     # load trained weights (otherwise simulate random policy)
-    itr = 56
+    itr = 79
     context_encoder.load_state_dict(
         torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"))
     )
@@ -150,13 +150,14 @@ def sim_policy(
 @click.option("--num_trajs", default=3)
 @click.option("--deterministic", is_flag=True, default=False)
 @click.option("--video", is_flag=True, default=False)
-def main(config, path, num_trajs, deterministic, video):
+@click.option("--manual_step", is_flag=True, default=False)
+def main(config, path, num_trajs, deterministic, video, manual_step):
     variant = default_config
     if config:
         with open(osp.join(config)) as f:
             exp_params = json.load(f)
         variant = deep_update_dict(exp_params, variant)
-    sim_policy(variant, path, num_trajs, deterministic, video)
+    sim_policy(variant, path, num_trajs, deterministic, video, manual_step)
 
 
 if __name__ == "__main__":

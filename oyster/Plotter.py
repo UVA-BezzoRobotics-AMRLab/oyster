@@ -50,8 +50,8 @@ class Plotter:
         self.ax = plt.subplot2grid((2, 2), (0, 0), rowspan=2, colspan=1)
         # self.ax.set_aspect("equal", adjustable="box")
 
-        self.ax_alpha_upper = plt.subplot2grid((2, 2), (0, 1))
-        self.ax_alpha_lower = plt.subplot2grid(
+        self.ax_alphas = plt.subplot2grid((2, 2), (0, 1))
+        self.ax_cbfs = plt.subplot2grid(
             (2, 2), (1, 1), sharex=self.ax_alpha_upper
         )
         # self.fig, (self.ax, self.ax_alpha_col) = plt.subplots(
@@ -61,22 +61,34 @@ class Plotter:
 
         # self.ax_alpha_upper, self.ax_alpha_lower = self.ax_alpha_col.figure.subplots(2, 1, sharex=True)
 
-        (self.alpha_upper_line,) = self.ax_alpha_upper.plot(
-            [], [], "r-", label="alpha_upper"
+        (self.alpha_upper_line,) = self.ax_alphas.plot(
+            [], [], "r-", label="alpha_upper", linewidth=2
         )
-        (self.alpha_lower_line,) = self.ax_alpha_lower.plot(
-            [], [], "b-", label="alpha_lower"
+        (self.alpha_lower_line,) = self.ax_alphas.plot(
+            [], [], "b-", label="alpha_lower", linewidth=2
         )
 
-        self.ax_alpha_upper.set_ylabel(r"$\alpha_{upper}$")
-        self.ax_alpha_lower.set_ylabel(r"$\alpha_{lower}$")
-        self.ax_alpha_lower.set_xlabel("Time step")
-        self.ax_alpha_upper.grid(True, linestyle="--", alpha=0.5)
-        self.ax_alpha_lower.grid(True, linestyle="--", alpha=0.5)
+        self.ax_alphas.set_ylabel(r"$\alpha$ values")
+        self.ax_alphas.set_xlabel("Time step")
+        self.ax_alphas.grid(True, linestyle="--", alpha=0.5)
 
         self.alpha_upper_hist = []
         self.alpha_lower_hist = []
-        self.alpha_t = []
+        self.steps = []
+
+        (self.cbf_upper_line,) = self.ax_cbfs.plot(
+            [], [], "r-", label="cbf_abv", linewidth=2
+        )
+        (self.cbf_lower_line,) = self.ax_cbfs.plot(
+            [], [], "b-", label="cbf_blw", linewidth=2
+        )
+
+        self.ax_cbfs.set_ylabel(r"$\alpha$ values")
+        self.ax_cbfs.set_xlabel("Time step")
+        self.ax_cbfs.grid(True, linestyle="--", alpha=0.5)
+
+        self.cbf_upper_hist = []
+        self.cbf_lower_hist = []
 
         if self.dynamics == Dynamics.DOUBLE_INTEGRATOR:
             self.robot_patch = Circle(
@@ -221,26 +233,32 @@ class Plotter:
 
         if len(self.prev_states) > 1:
             path = np.array(self.prev_states)
-            # if len(self.prev_states) == 100:
-            #     print(path)
-            #     exit(0)
             self.path_line.set_data(path[:, 0], path[:, 1])
 
         params = mpc.get_params()
         alpha_upper = params["CBF_ALPHA_ABV"]
         alpha_lower = params["CBF_ALPHA_BLW"]
 
-        t = len(self.alpha_t)
-        self.alpha_t.append(t)
+        t = len(self.steps)
+        self.steps.append(t)
         self.alpha_upper_hist.append(alpha_upper)
         self.alpha_lower_hist.append(alpha_lower)
 
-        self.alpha_upper_line.set_data(self.alpha_t, self.alpha_upper_hist)
-        self.alpha_lower_line.set_data(self.alpha_t, self.alpha_lower_hist)
+        self.alpha_upper_line.set_data(self.steps, self.alpha_upper_hist)
+        self.alpha_lower_line.set_data(self.steps, self.alpha_lower_hist)
 
-        for ax in [self.ax_alpha_upper, self.ax_alpha_lower]:
-            ax.relim()
-            ax.autoscale_view()
+        self.ax_alphas.relim()
+        self.ax_alphas.autoscale_view()
+
+        cbf_abv, cbf_blw = self.get_cbfs(mpc, tube_gen)
+        self.cbf_upper_hist.append(cbf_abv)
+        self.cbf_lower_hist.append(cbf_blw)
+
+        self.cbf_upper_line.set_data(self.steps, self.cbf_upper_hist)
+        self.cbf_lower_line.set_data(self.steps, self.cbf_lower_hist)
+
+        self.ax_cbfs.relim()
+        self.ax_cbfs.autoscale_view()
 
         self.plot_tubes(
             curve,
@@ -250,6 +268,20 @@ class Plotter:
         )
 
         plt.pause(0.001)
+
+    def get_cbfs(self, mpc, tube_gen):
+
+        horizon = mpc.get_horizon()
+        len_start = mpc.compute_adjusted_ref(len_start)
+        xs, ys = self.mpc.compute_adjusted_ref(len_start)
+
+        ref_len = mpc.get_params()["REF_LENGTH"]
+        upper_coeffs, lower_coeffs = tube_gen.shift_poly_parameter(len_start, ref_len)
+
+        cbf_abv = mpc.get_cbf_abv(horizon[0,1:7], upper_coeffs, xs, ys)
+        cbf_blw = mpc.get_cbf_abv(horizon[0,1:7], lower_coeffs, xs, ys)
+
+        return cbf_abv, cbf_blw
 
     def add_state_to_path(self, robot_state):
         # if more than 60 points, remove oldest

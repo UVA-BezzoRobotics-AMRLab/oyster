@@ -45,17 +45,31 @@ class RobotMPC:
         cpp_files = pathlib.Path(cpp_dir).glob('*.cpp')
         so_files = pathlib.Path(cpp_dir).glob('*.so')
 
-        if len(list(so_files)) != 8:
+        if len(list(so_files)) != 19:
             # assuming one . in fname
             for file in cpp_files:
                 fname = str(file).split(".")[0]
                 os.system(f"gcc -fPIC -shared {fname}.cpp -o {fname}.so")
 
+        self.get_xr= ca.external('xr', os.path.join(cpp_dir, "./compute_xr.so"))
+        self.get_yr= ca.external('yr', os.path.join(cpp_dir, "./compute_yr.so"))
+        self.get_spline_x = ca.external('xr', os.path.join(cpp_dir, "./compute_spline_x.so"))
+        self.get_spline_y = ca.external('yr', os.path.join(cpp_dir, "./compute_spline_y.so"))
+
         self.get_xrdot = ca.external('xr_dot', os.path.join(cpp_dir, "./compute_xrdot.so"))
         self.get_yrdot = ca.external('yr_dot', os.path.join(cpp_dir, "./compute_yrdot.so"))
+
+        self.get_p_abv = ca.external('p_abv', os.path.join(cpp_dir, "./compute_p_abv.so"))
+        self.get_p_blw = ca.external('p_blw', os.path.join(cpp_dir, "./compute_p_blw.so"))
+
+        self.get_d_abv = ca.external('d_abv', os.path.join(cpp_dir, "./compute_d_abv.so"))
+        self.get_d_blw = ca.external('d_blw', os.path.join(cpp_dir, "./compute_d_blw.so"))
+        self.get_signed_d = ca.external('signed_d', os.path.join(cpp_dir, "./compute_signed_d.so"))
         self.get_cbf_abv = ca.external('h_abv', os.path.join(cpp_dir, "./compute_cbf_abv.so"))
         self.get_lfh_abv = ca.external('lfh_abv', os.path.join(cpp_dir, "./compute_lfh_abv.so"))
         self.get_lgh_abv = ca.external('lgh_abv', os.path.join(cpp_dir, "./compute_lgh_abv.so"))
+        self.get_hdot_abv= ca.external('hdot_abv', os.path.join(cpp_dir, "./compute_hdot_abv.so"))
+        self.get_hdot_blw = ca.external('hdot_blw', os.path.join(cpp_dir, "./compute_hdot_blw.so"))
 
         self.get_cbf_blw = ca.external('h_blw', os.path.join(cpp_dir, "./compute_cbf_blw.so"))
         self.get_lfh_blw = ca.external('lfh_blw', os.path.join(cpp_dir, "./compute_lfh_blw.so"))
@@ -97,7 +111,7 @@ class RobotMPC:
             )
             self.prev_s = len_start
 
-            state = np.concatenate((self.robot_state, np.array([0, s_dot])))
+            state = np.concatenate((self.robot_state, np.array([1e-2, s_dot])))
             if self.dyn_model == Dynamics.UNICYCLE:
                 v = self.robot_state[3]
                 state[2] = v * np.cos(self.robot_state[2])
@@ -175,6 +189,9 @@ class RobotMPC:
 
     def get_acc_command(self):
         return self.mpc.get_mpc_command()
+
+    def compute_adjusted_ref(self, s):
+        return self.mpc.compute_adjusted_ref(s)
 
     def get_solver_status(self):
         return self.mpc.get_solver_status()

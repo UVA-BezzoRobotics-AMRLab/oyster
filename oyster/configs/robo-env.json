@@ -9,6 +9,7 @@
     "algo_params": {
         "num_iterations": 80,
         "meta_batch": 4,
+        "discount_factor": 0.99, 
         "num_initial_steps": 250,
         "num_steps_prior": 400,
         "num_steps_posterior": 0,
@@ -18,9 +19,9 @@
         "num_exp_traj_eval": 1,
         "embedding_batch_size": 256,
         "embedding_mini_batch_size": 256,
-        "policy_lr": 5e-6,
-        "qf_lr": 5e-6,
-        "vf_lr": 5e-6,
-        "context_lr": 5e-6
+        "policy_lr": 2e-6,
+        "qf_lr": 2e-6,
+        "vf_lr": 2e-6,
+        "context_lr": 2e-6
     }
 }

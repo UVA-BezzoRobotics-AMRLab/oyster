@@ -53,7 +53,7 @@ prop_gain_thresh: .5
 max_tube_width: .75
 
 # recompile after changing all params from here on
-ref_length_size: 4
+ref_length_size: 6
 mpc_ref_samples: 11
 
 # there will be d+1 variables in the LP formulation

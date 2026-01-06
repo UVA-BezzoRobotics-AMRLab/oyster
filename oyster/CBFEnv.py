@@ -43,11 +43,15 @@ class CBFEnv(gym.Env):
     def __init__(
         self,
         world_num=0,
-        N = 3
+        N = 3,
+        manual_step=False,
+        normalize_obs=True
     ):
 
         super(CBFEnv, self).__init__()
 
+        self.should_normalize = normalize_obs
+        self.manual_step = manual_step
         self.N_alpha = 2
         self.N_horizon = N
 
@@ -56,7 +60,7 @@ class CBFEnv(gym.Env):
 
         # each task is loaded from parameter list
         self.task_loader = self.load_tasks()
-        self.traj_schedule = [30, 10]
+        self.traj_schedule = [15, 10]
 
         self.did_collide = False
 
@@ -164,19 +168,18 @@ class CBFEnv(gym.Env):
         self.lower_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
         self.lower_coeffs[0] = -self.params["MAX_TUBE_WIDTH"] / 2.0
 
-        # These values were computed empirically over 50k samples
+        # These values were computed empirically over 100k samples
         obs_mu = np.zeros(len(RLObs))
-        obs_mu[RLObs.CBF_ABV] = 0.31351834
-        obs_mu[RLObs.LFH_LGH_ABV] = -0.08118895
-        obs_mu[RLObs.CBF_BLW] = 0.30968506
-        obs_mu[RLObs.LFH_LGH_BLW] = -0.06886277
-
+        obs_mu[RLObs.CBF_ABV] = 0.4528
+        obs_mu[RLObs.LFH_LGH_ABV] = 0.1894
+        obs_mu[RLObs.CBF_BLW] = 0.1644
+        obs_mu[RLObs.LFH_LGH_BLW] = 0.0046
 
         obs_std = np.zeros(len(RLObs))
-        obs_std[RLObs.CBF_ABV] = 0.11640778
-        obs_std[RLObs.LFH_LGH_ABV] = 0.43526554
-        obs_std[RLObs.CBF_BLW] = 0.11402489
-        obs_std[RLObs.LFH_LGH_BLW] = 0.41840122
+        obs_std[RLObs.CBF_ABV] = 0.2233
+        obs_std[RLObs.LFH_LGH_ABV] = 0.5642
+        obs_std[RLObs.CBF_BLW] = 0.2555
+        obs_std[RLObs.LFH_LGH_BLW] = 0.5256
 
         self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
         self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
@@ -238,6 +241,7 @@ class CBFEnv(gym.Env):
         self.current_ref = (self.curve.xs[idx], self.curve.ys[idx])
 
         obs = self.get_obs()
+        # print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
         v_max = self.params["LINVEL"]
@@ -249,10 +253,12 @@ class CBFEnv(gym.Env):
 
         is_done = self.step_count >= 190 or (len_start >= self.curve.knots[-1] - 1) or is_colliding
 
+        if self.manual_step:
+            a = input()
+
         self.total_reward += reward
         return (
-            # self.normalize_obs(obs),
-            obs,
+            self.normalize_obs(obs) if self.should_normalize else obs,
             reward,
             is_done,
             {},
@@ -288,7 +294,7 @@ class CBFEnv(gym.Env):
 
         obs = np.zeros(self.state_dim, dtype=np.float64)
         obs[-self.N_alpha:] = [params["CBF_ALPHA_ABV"], params["CBF_ALPHA_BLW"]]
-        return self.normalize_obs(obs)
+        return self.normalize_obs(obs) if self.should_normalize else obs
 
     def get_obs(self):
         horizon = np.array(self.mpc.get_horizon())
@@ -296,11 +302,17 @@ class CBFEnv(gym.Env):
             raise ValueError("Horizon shape", horizon.shape[0], "is smaller than N_horizon set", 
                              self.N_horizon)
 
-        xs, ys = self.curve.compute_adjusted_ref(0)
+        len_start = self.mpc.get_s_from_pose(horizon[0, 1:3])
+        # xs, ys = self.curve.compute_adjusted_ref(len_start)
+        xs, ys = self.mpc.compute_adjusted_ref(len_start)
+        # print("[python] len_start", len_start)
+        # print("[python] ctrls_x", xs)
+        # print("[python] ctrls_y", ys)
 
         obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
         for i in range(self.N_horizon):
             state = horizon[i,1:7]
+            # state[-2] += 1e-2
             acc = horizon[i,7:]
 
             cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
@@ -313,25 +325,57 @@ class CBFEnv(gym.Env):
             lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
             lghu_blw = lgh_blw[:2] @ acc
 
-            if np.isnan(cbf_abv) or np.isnan(cbf_blw):
+
+            obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
+            obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
+            obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
+            obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
+
+            p_blw = self.mpc.get_p_blw(state, xs, ys)
+            signed_d = self.mpc.get_signed_d(state, xs, ys)
+            d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
+            h_blw = (signed_d - d_blw) * np.exp(-p_blw)
+            if i == 0:
+                print("signed_d (casadi)", signed_d)
+                tmp_p = self.curve.pos(len_start)
+                print("signed_d (manual)", np.linalg.norm(tmp_p-state[:2]))
+                print("d_blw (casadi)", d_blw)
+                print("d_blw (manual)", np.polyval(self.lower_coeffs[::-1], 0))
+            # print(i, "h_blw manual:", h_blw)
+            # print(i, "h_blw casadi:", cbf_blw)
+            if np.any(np.isnan(obs)):
                 print("STATE", state)
                 print("upper", self.upper_coeffs)
                 print("lower", self.lower_coeffs)
                 print(xs)
                 print(ys)
 
-                print("xr_dot", self.mpc.get_xrdot(state, xs, ys))
-                print("yr_dot", self.mpc.get_yrdot(state, xs, ys))
+                print(i, "xr", self.mpc.get_xr(state, xs))
+                print(i, "yr", self.mpc.get_yr(state, ys))
+                print(i, "spline_x", self.mpc.get_spline_x(state[-2], xs))
+                print(i, "spline_y", self.mpc.get_spline_y(state[-2], ys))
+
+
+                print(i, "xr_dot", self.mpc.get_xrdot(state, xs, ys))
+                print(i, "yr_dot", self.mpc.get_yrdot(state, xs, ys))
 
                 print(i, "cbf_abv", cbf_abv)
                 print(i, "cbf_blw", cbf_blw)
                 print(i, "lfh_lgh_abv", lfh_abv + lghu_abv)
                 print(i, "lfh_lgh_blw", lfh_blw + lghu_blw)
 
-            obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
-            obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
-            obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
-            obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
+                print(i, "hdot_abv", self.mpc.get_hdot_abv(state, self.upper_coeffs, xs, ys))
+                print(i, "hdot_blw", self.mpc.get_hdot_blw(state, self.upper_coeffs, xs, ys))
+
+                print("POS IS", self.curve.pos(state[-2]))
+                print("VEL IS", self.curve.vel(state[-2]))
+
+                print('p_abv:', self.mpc.get_p_abv(state, xs, ys))
+                print('signed_d:', self.mpc.get_signed_d(state, xs, ys))
+
+                print("d_abv", self.mpc.get_d_abv(state, self.upper_coeffs))
+                print("d_blw", self.mpc.get_d_blw(state, self.lower_coeffs))
+
 
             # obs[i * len(RLObs) : (i+1)*len(RLObs)] = [
             #     float(cbf_abv), 
@@ -416,7 +460,7 @@ class CBFEnv(gym.Env):
         worst_const = min(min_const_abv, min_const_blw)
         # print("WORST_CONST", worst_const)
         reward += 0.7 * np.tanh(worst_const)
-        # print("CONST REWARD", reward)
+        print("CONST REWARD", reward)
 
         avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
         alphas = (obs[-self.N_alpha:] - avg) / avg
@@ -424,11 +468,13 @@ class CBFEnv(gym.Env):
 
         # penalize alpha being too large
         # penalize alpha leaving prescribed bounds
-        alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
+        alpha_reward = 0
+        # alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
+
         # print("largeness:", alpha_reward)
         alpha_reward -= np.sum((d[d < 0])**2)
 
-        # print("ALPHA_REWARD:", alpha_reward)
+        print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
@@ -551,7 +597,7 @@ class RunningStats:
         self.M2 = np.zeros(dim)
 
     def update(self, x):
-        if np.any(np.abs(x) > 10) or np.any(np.isnan(x)):
+        if np.any(np.abs(x) > 10):
             return
 
         self.n += 1
@@ -571,10 +617,11 @@ class RunningStats:
 
 @click.command()
 @click.option("--record_data", is_flag=True, default=False)
-def main(record_data):
+@click.option("--manual_step", is_flag=True, default=False)
+def main(record_data, manual_step):
 
     if not record_data:
-        env = CBFEnv(world_num = 296)
+        env = CBFEnv(world_num = 296, manual_step=manual_step)
         env.reset_task(1)
         done = False
         world_count = 0
@@ -594,12 +641,14 @@ def main(record_data):
         obs_count = 0
         n_samples = 1e5
         done = False
-        stats = RunningStats(14)
+        stats = RunningStats(12)
         with open("obs_log.csv", "w", newline="") as f:
             writer = csv.writer(f)
 
             for i in range(0, 300):
-                env = CBFEnv(world_num = i)
+                # obvsiouly cant normalize if we are trying to collect 
+                # distribution statistics
+                env = CBFEnv(world_num = i, normalize_obs=False)
 
                 done = False
                 for j in range(6):
@@ -613,20 +662,43 @@ def main(record_data):
                         except:
                             break
 
+                        obs = obs[:-2]
+                        print(obs)
                         if obs_count > n_samples:
                             break
 
                         obs_count += 1
-                        writer.writerow(obs)
-                        stats.update(obs)
+
+                        if not np.any(np.isnan(obs)):
+                            writer.writerow(obs)
+                            stats.update(obs)
 
                     if done:
                         world_count += 1
 
-                print("MEAN:", stats.mean)
-                print("STD:", stats.std)
-                print("ROW_COUNT:", obs_count)
+        cbf_abv_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 0]
+        cbf_dot_abv_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 1]
+
+        cbf_blw_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 2]
+        cbf_dot_blw_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 3]
+
+        cbf_abv_std = [std for i, std in enumerate(stats.std) if i % 4 == 0]
+        cbf_dot_abv_std = [std for i, std in enumerate(stats.std) if i % 4 == 1]
+
+        cbf_blw_std = [std for i, std in enumerate(stats.std) if i % 4 == 2]
+        cbf_dot_blw_std = [std for i, std in enumerate(stats.std) if i % 4 == 3]
+
+        print("CBF_ABV_MEAN:",     np.average(cbf_abv_mu))
+        print("CBF_DOT_ABV_MEAN:", np.average(cbf_dot_abv_mu))
+        print("CBF_BLW_MEAN:",     np.average(cbf_blw_mu))
+        print("CBF_DOT_BLW_MEAN:", np.average(cbf_dot_blw_mu))
+
+        print("CBF_ABV_STD:",      np.average(cbf_abv_std))
+        print("CBF_DOT_ABV_STD:",  np.average(cbf_dot_abv_std))
+        print("CBF_BLW_STD:",      np.average(cbf_blw_std))
+        print("CBF_DOT_BLW_STD:",  np.average(cbf_dot_blw_std))
+
+        print("ROW_COUNT:", obs_count)
 
 if __name__ == "__main__":
     main()
-
