@@ -127,12 +127,12 @@ class CBFEnv(gym.Env):
 
         # i dont think these bounds every get used by the SAC algorithm
         self.low = np.array(
-            -2 * np.ones(self.state_dim),
+            -10 * np.ones(self.state_dim),
             dtype=np.float64,
         )
 
         self.high = np.array(
-            2 * np.ones(self.state_dim),
+            10 * np.ones(self.state_dim),
             dtype=np.float64,
         )
 
