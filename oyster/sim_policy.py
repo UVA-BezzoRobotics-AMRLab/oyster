@@ -33,7 +33,7 @@ def sim_policy(
     """
 
     # create multi-task environment and sample tasks
-    env = CBFEnv(world_num=296, manual_step=manual_step)
+    env = CBFEnv(world_num=280, manual_step=manual_step)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
@@ -80,11 +80,13 @@ def sim_policy(
         agent = MakeDeterministic(agent)
 
     # load trained weights (otherwise simulate random policy)
-    itr = 79
+    itr = 71
+    cpu_device = None if torch.cuda.is_available() else torch.device('cpu')
+    print(cpu_device)
     context_encoder.load_state_dict(
-        torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"))
+        torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"), map_location=cpu_device)
     )
-    policy.load_state_dict(torch.load(os.path.join(path_to_exp, f"policy_itr_{itr}.pth")))
+    policy.load_state_dict(torch.load(os.path.join(path_to_exp, f"policy_itr_{itr}.pth"), map_location=cpu_device))
 
     # loop through tasks collecting rollouts
     all_rets = []
