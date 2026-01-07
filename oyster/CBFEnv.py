@@ -307,12 +307,12 @@ class CBFEnv(gym.Env):
         # print("[python] ctrls_x", xs)
         # print("[python] ctrls_y", ys)
 
-        inds = np.linspace(1, self.mpc_horizon_len, self.N_horizon, dtype=int)
+        inds = np.linspace(1, horizon_len-1, self.N_horizon, dtype=int)
         obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
-        for i in inds:
-            state = horizon[i,1:7]
+        for i in range(self.N_horizon):
+            state = horizon[inds[i],1:7]
             # state[-2] += 1e-2
-            acc = horizon[i,7:]
+            acc = horizon[inds[i],7:]
 
             cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
             lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
