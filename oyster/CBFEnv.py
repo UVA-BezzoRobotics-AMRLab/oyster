@@ -281,12 +281,12 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
-        params["CBF_ALPHA_ABV"] = 2.5
-        params["CBF_ALPHA_BLW"] = 2.5
+        # params["CBF_ALPHA_ABV"] = 2.5
+        # params["CBF_ALPHA_BLW"] = 2.5
 
         self.set_mpc(params)
-        self.curve = None
 
+        self.curve = None
         self.plotter = None
 
         # self.robot_state = np.zeros(4, dtype=np.float64)
@@ -298,19 +298,21 @@ class CBFEnv(gym.Env):
 
     def get_obs(self):
         horizon = np.array(self.mpc.get_horizon())
-        if horizon.shape[0] < self.N_horizon:
+        horizon_len = horizon.shape[0]
+        if horizon_len < self.N_horizon:
             raise ValueError("Horizon shape", horizon.shape[0], "is smaller than N_horizon set", 
                              self.N_horizon)
 
-        len_start = self.mpc.get_s_from_pose(horizon[0, 1:3])
+        len_start = self.mpc.get_s_from_pose(horizon[1, 1:3])
         # xs, ys = self.curve.compute_adjusted_ref(len_start)
         xs, ys = self.mpc.compute_adjusted_ref(len_start)
         # print("[python] len_start", len_start)
         # print("[python] ctrls_x", xs)
         # print("[python] ctrls_y", ys)
 
+        inds = np.linspace(1, self.mpc_horizon_len, self.N_horizon, dtype=int)
         obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
-        for i in range(self.N_horizon):
+        for i in inds:
             state = horizon[i,1:7]
             # state[-2] += 1e-2
             acc = horizon[i,7:]
@@ -324,7 +326,6 @@ class CBFEnv(gym.Env):
             lfh_blw = self.mpc.get_lfh_blw(state, self.lower_coeffs, xs, ys)
             lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
             lghu_blw = lgh_blw[:2] @ acc
-
 
             obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
             obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
@@ -423,6 +424,7 @@ class CBFEnv(gym.Env):
                 self.occupancy_grid,
                 self.upper_coeffs,
                 self.lower_coeffs,
+                self.mpc,
                 self.dynamic_model,
                 0.25,
             )
@@ -635,12 +637,13 @@ class RunningStats:
 
 
 @click.command()
+@click.option("--world_num", default=0)
 @click.option("--record_data", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(record_data, manual_step):
+def main(record_data, manual_step, world_num):
 
     if not record_data:
-        env = CBFEnv(world_num = 296, manual_step=manual_step)
+        env = CBFEnv(world_num = world_num, manual_step=manual_step)
         env.reset_task(1)
         done = False
         world_count = 0

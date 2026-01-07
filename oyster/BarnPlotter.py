@@ -17,6 +17,7 @@ class BarnPlotter:
         occ_grid,
         upper_coeffs,
         lower_coeffs,
+        mpc,
         dynamics=Dynamics.DOUBLE_INTEGRATOR,
         robot_size=0.2,
         theta=np.pi / 3,
@@ -39,16 +40,18 @@ class BarnPlotter:
         self.prev_states = []
 
         if render:
-            self.init_plot(curve, occ_grid, upper_coeffs, lower_coeffs)
+            self.init_plot(curve, occ_grid, upper_coeffs, lower_coeffs, mpc)
 
-    def init_plot(self, curve, occ_grid, upper_coeffs, lower_coeffs):
+    def init_plot(self, curve, occ_grid, upper_coeffs, lower_coeffs, mpc):
 
         # visualization setup
         self.fig = plt.figure(figsize=(16, 8))
         # fig_manager = plt.get_current_fig_manager()
         # self.fig.canvas.manager.full_screen_toggle()
 
+        max_vel = mpc.get_params()["LINVEL"]
         self.ax = plt.subplot2grid((2, 2), (0, 0), rowspan=2, colspan=1)
+        self.ax.set_title(f"{self.dynamics.name}:   max_vel={max_vel} m/s")
         # self.ax.set_aspect("equal", adjustable="box")
 
         self.ax_alphas = plt.subplot2grid((2, 2), (0, 1))
