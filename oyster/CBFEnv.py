@@ -170,16 +170,16 @@ class CBFEnv(gym.Env):
 
         # These values were computed empirically over 100k samples
         obs_mu = np.zeros(len(RLObs))
-        obs_mu[RLObs.CBF_ABV] = 0.4528
-        obs_mu[RLObs.LFH_LGH_ABV] = 0.1894
-        obs_mu[RLObs.CBF_BLW] = 0.1644
-        obs_mu[RLObs.LFH_LGH_BLW] = 0.0046
+        obs_mu[RLObs.CBF_ABV] = 0.3115
+        obs_mu[RLObs.LFH_LGH_ABV] = -0.046
+        obs_mu[RLObs.CBF_BLW] = 0.3077
+        obs_mu[RLObs.LFH_LGH_BLW] = -0.0492
 
         obs_std = np.zeros(len(RLObs))
-        obs_std[RLObs.CBF_ABV] = 0.2233
-        obs_std[RLObs.LFH_LGH_ABV] = 0.5642
-        obs_std[RLObs.CBF_BLW] = 0.2555
-        obs_std[RLObs.LFH_LGH_BLW] = 0.5256
+        obs_std[RLObs.CBF_ABV] = 0.113
+        obs_std[RLObs.LFH_LGH_ABV] = 0.356
+        obs_std[RLObs.CBF_BLW] = 0.1064
+        obs_std[RLObs.LFH_LGH_BLW] = 0.3451
 
         self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
         self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
@@ -281,9 +281,6 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
-        params["CBF_ALPHA_ABV"] = 2.5
-        params["CBF_ALPHA_BLW"] = 2.5
-
         self.set_mpc(params)
         self.curve = None
 
@@ -335,29 +332,29 @@ class CBFEnv(gym.Env):
             signed_d = self.mpc.get_signed_d(state, xs, ys)
             d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
             h_blw = (signed_d - d_blw) * np.exp(-p_blw)
-            if i == 0:
-                tmp_p = self.curve.pos(len_start)
-                adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
-                adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
-                man_signed_d =  np.linalg.norm(tmp_p-state[:2])
-                man_d_blw = np.polyval(self.lower_coeffs[::-1], 0)
-                print("signed_d (casadi)", signed_d)
-                print("signed_d (manual)", man_signed_d)
-                print("signed_d (adjust)", adj_man_sd)
-                print("d_blw (casadi)", d_blw)
-                print("d_blw (manual)", man_d_blw)
-                obs_dir = [self.mpc.get_obs_dirx(state, xs, ys), self.mpc.get_obs_diry(state, xs, ys)]
-                print("obs_dir (casadi)", obs_dir)
-                tmp_v = self.curve.vel(len_start)
-                tmp_n = np.array([-tmp_v[1], tmp_v[0]])
-                tmp_n = tmp_n / np.linalg.norm(tmp_n)
-                print("obs_dir (manual)", tmp_n)
-
-                # self.obs_dirx = -sin(self.phi_r)
-                # self.obs_diry = cos(self.phi_r)
-
-                signed_d = (state[0] - tmp_p[0]) * obs_dir[0] + (state[1]- tmp_p[1]) * obs_dir[1]
-                print("signed_d(man caasdi calc)", signed_d)
+            # if i == 0:
+            #     tmp_p = self.curve.pos(len_start)
+            #     adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
+            #     adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
+            #     man_signed_d =  np.linalg.norm(tmp_p-state[:2])
+            #     man_d_blw = np.polyval(self.lower_coeffs[::-1], 0)
+            #     print("signed_d (casadi)", signed_d)
+            #     print("signed_d (manual)", man_signed_d)
+            #     print("signed_d (adjust)", adj_man_sd)
+            #     print("d_blw (casadi)", d_blw)
+            #     print("d_blw (manual)", man_d_blw)
+            #     obs_dir = [self.mpc.get_obs_dirx(state, xs, ys), self.mpc.get_obs_diry(state, xs, ys)]
+            #     print("obs_dir (casadi)", obs_dir)
+            #     tmp_v = self.curve.vel(len_start)
+            #     tmp_n = np.array([-tmp_v[1], tmp_v[0]])
+            #     tmp_n = tmp_n / np.linalg.norm(tmp_n)
+            #     print("obs_dir (manual)", tmp_n)
+            #
+            #     # self.obs_dirx = -sin(self.phi_r)
+            #     # self.obs_diry = cos(self.phi_r)
+            #
+            #     signed_d = (state[0] - tmp_p[0]) * obs_dir[0] + (state[1]- tmp_p[1]) * obs_dir[1]
+            #     print("signed_d(man caasdi calc)", signed_d)
 
             # print(i, "h_blw manual:", h_blw)
             # print(i, "h_blw casadi:", cbf_blw)
@@ -476,9 +473,7 @@ class CBFEnv(gym.Env):
 
         # reward model for having large constraint values
         worst_const = min(min_const_abv, min_const_blw)
-        # print("WORST_CONST", worst_const)
-        reward += 0.12 * np.tanh(worst_const)
-        # print("CONST REWARD", reward)
+        reward += 0.15 * np.tanh(worst_const)
 
         avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
         alphas = (obs[-self.N_alpha:] - avg) / avg
@@ -495,6 +490,9 @@ class CBFEnv(gym.Env):
         # print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
+
+        # solver_status = self.mpc.get_solver_status()
+        # reward += -.1 if not solver_status else 0.
 
         if is_colliding:
             print("total reward before collision:", self.total_reward)
@@ -640,7 +638,7 @@ class RunningStats:
 def main(record_data, manual_step):
 
     if not record_data:
-        env = CBFEnv(world_num = 296, manual_step=manual_step)
+        env = CBFEnv(world_num = 290, manual_step=manual_step)
         env.reset_task(1)
         done = False
         world_count = 0
