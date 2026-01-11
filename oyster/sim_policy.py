@@ -19,7 +19,7 @@ from oyster.CBFEnv import CBFEnv
 
 
 def sim_policy(
-    variant, path_to_exp, num_trajs=1, deterministic=False, save_video=False, manual_step=False
+    variant, path_to_exp, world_num=0, num_trajs=1, deterministic=False, save_video=False, manual_step=False
 ):
     """
     simulate a trained policy adapting to a new task
@@ -33,7 +33,7 @@ def sim_policy(
     """
 
     # create multi-task environment and sample tasks
-    env = CBFEnv(world_num=280, manual_step=manual_step)
+    env = CBFEnv(world_num=world_num, manual_step=manual_step)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
@@ -149,17 +149,18 @@ def sim_policy(
 @click.command()
 @click.argument("config", default=None)
 @click.argument("path", default=None)
+@click.option("--world_num", default=0)
 @click.option("--num_trajs", default=3)
 @click.option("--deterministic", is_flag=True, default=False)
 @click.option("--video", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(config, path, num_trajs, deterministic, video, manual_step):
+def main(config, path, world_num, num_trajs, deterministic, video, manual_step):
     variant = default_config
     if config:
         with open(osp.join(config)) as f:
             exp_params = json.load(f)
         variant = deep_update_dict(exp_params, variant)
-    sim_policy(variant, path, num_trajs, deterministic, video, manual_step)
+    sim_policy(variant, path, world_num, num_trajs, deterministic, video, manual_step)
 
 
 if __name__ == "__main__":

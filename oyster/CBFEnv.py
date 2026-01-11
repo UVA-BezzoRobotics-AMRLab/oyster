@@ -25,6 +25,7 @@ from py_planner import PlannerParams
 from py_planner import OccupancyGrid
 from MapLoader import parse_xml_file, generate_map_from_cylinders
 
+from py_mpcc import Polynomial
 
 class RLObs(IntEnum):
     CBF_ABV = 0
@@ -146,7 +147,6 @@ class CBFEnv(gym.Env):
         # for some reason _goal is needed for PEARL, but it can be
         # set to anything
         self._goal = None
-        self.curve = None
 
         self.plotter = None
         self.reset()
@@ -156,7 +156,7 @@ class CBFEnv(gym.Env):
 
         self.params = copy.deepcopy(params)
         self.dynamic_model = self.params["DYNAMIC_MODEL"]
-        self.params["USE_CBF"] = True
+        # self.params["USE_CBF"] = True
 
         init_pose = np.concatenate(([-2.25, -2.5], [np.pi / 2]))
         self.mpc = RobotMPC(init_pose, self.params)
@@ -213,10 +213,11 @@ class CBFEnv(gym.Env):
         self.step_count += 1
 
         self.update_trajectory()
+        trajectory = self.mpc.get_trajectory()
 
         self.params = self.mpc.get_params()
 
-        len_start = self.mpc.get_s_from_pose(self.robot_state[:2])
+        len_start = trajectory.get_closest_s(self.robot_state[:2])
         self.get_and_set_tubes(len_start)
 
         action = np.array(action)
@@ -235,13 +236,14 @@ class CBFEnv(gym.Env):
             self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
+        # print("ROBOT_STATE before:", self.robot_state)
         self.robot_state = self.mpc.apply_control(u)
+        # print("ROBOT_STATE after:", self.robot_state)
 
-        idx = (np.abs(self.curve.knots.flatten() - len_start)).argmin()
-        self.current_ref = (self.curve.xs[idx], self.curve.ys[idx])
+        self.current_ref = trajectory(len_start)
 
         obs = self.get_obs()
-        # print("obs:", obs)
+        print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
         v_max = self.params["LINVEL"]
@@ -251,12 +253,17 @@ class CBFEnv(gym.Env):
         # ---------------- reward ----------------
         reward = self.get_reward(obs, is_colliding)
 
-        is_done = self.step_count >= 250 or (len_start >= self.curve.knots[-1] - .2) or is_colliding
+        is_done = self.step_count >= 250 or (len_start >= trajectory.get_true_length() - .2) or is_colliding
+
+        self.total_reward += reward
+        print("step reward:", reward)
+        print("total reward:", self.total_reward)
+        if self.plotter is not None:
+            self.plotter.log_reward(reward)
 
         if self.manual_step:
             a = input()
 
-        self.total_reward += reward
         return (
             self.normalize_obs(obs) if self.should_normalize else obs,
             reward,
@@ -281,9 +288,13 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
+        params["USE_CBF"] = False
+        params["CBF_ALPHA_ABV"] = 5
+        params["CBF_ALPHA_BLW"] = 5
+
         self.set_mpc(params)
 
-        self.curve = None
+        self.planner.has_trajectory = False
         self.plotter = None
 
         # self.robot_state = np.zeros(4, dtype=np.float64)
@@ -294,25 +305,28 @@ class CBFEnv(gym.Env):
         return self.normalize_obs(obs) if self.should_normalize else obs
 
     def get_obs(self):
-        horizon = np.array(self.mpc.get_horizon())
-        horizon_len = horizon.shape[0]
+        horizon = self.mpc.get_horizon()
+        horizon_len = horizon.length
         if horizon_len < self.N_horizon:
             raise ValueError("Horizon shape", horizon.shape[0], "is smaller than N_horizon set", 
                              self.N_horizon)
 
-        len_start = self.mpc.get_s_from_pose(horizon[1, 1:3])
-        # xs, ys = self.curve.compute_adjusted_ref(len_start)
-        xs, ys = self.mpc.compute_adjusted_ref(len_start)
-        # print("[python] len_start", len_start)
-        # print("[python] ctrls_x", xs)
-        # print("[python] ctrls_y", ys)
+        trajectory = self.mpc.get_trajectory()
 
-        inds = np.linspace(1, horizon_len-1, self.N_horizon, dtype=int)
+        state = self.mpc.get_state_from_horizon(1)
+        len_start = trajectory.get_closest_s(state[:2])
+        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
+        xs = adjusted_traj.get_ctrls_x()
+        ys = adjusted_traj.get_ctrls_y()
+
+
+        # go to length-2 because N-1 inputs in horizon of size N
+        inds = np.linspace(1, horizon_len-2, self.N_horizon, dtype=int)
         obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
         for i in range(self.N_horizon):
-            state = horizon[inds[i],1:7]
+            state = self.mpc.get_state_from_horizon(inds[i])
             # state[-2] += 1e-2
-            acc = horizon[inds[i],7:]
+            acc = self.mpc.get_input_from_horizon(inds[i])[:2]
 
             cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
             lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
@@ -329,78 +343,57 @@ class CBFEnv(gym.Env):
             obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
             obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
 
-            p_blw = self.mpc.get_p_blw(state, xs, ys)
-            signed_d = self.mpc.get_signed_d(state, xs, ys)
-            d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
-            h_blw = (signed_d - d_blw) * np.exp(-p_blw)
-            # if i == 0:
-            #     tmp_p = self.curve.pos(len_start)
-            #     adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
-            #     adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
-            #     man_signed_d =  np.linalg.norm(tmp_p-state[:2])
-            #     man_d_blw = np.polyval(self.lower_coeffs[::-1], 0)
-            #     print("signed_d (casadi)", signed_d)
-            #     print("signed_d (manual)", man_signed_d)
-            #     print("signed_d (adjust)", adj_man_sd)
-            #     print("d_blw (casadi)", d_blw)
-            #     print("d_blw (manual)", man_d_blw)
-            #     obs_dir = [self.mpc.get_obs_dirx(state, xs, ys), self.mpc.get_obs_diry(state, xs, ys)]
-            #     print("obs_dir (casadi)", obs_dir)
-            #     tmp_v = self.curve.vel(len_start)
-            #     tmp_n = np.array([-tmp_v[1], tmp_v[0]])
-            #     tmp_n = tmp_n / np.linalg.norm(tmp_n)
-            #     print("obs_dir (manual)", tmp_n)
-            #
-            #     # self.obs_dirx = -sin(self.phi_r)
-            #     # self.obs_diry = cos(self.phi_r)
-            #
-            #     signed_d = (state[0] - tmp_p[0]) * obs_dir[0] + (state[1]- tmp_p[1]) * obs_dir[1]
-            #     print("signed_d(man caasdi calc)", signed_d)
 
-            # print(i, "h_blw manual:", h_blw)
-            # print(i, "h_blw casadi:", cbf_blw)
-            if np.any(np.isnan(obs)):
-                print("STATE", state)
-                print("upper", self.upper_coeffs)
-                print("lower", self.lower_coeffs)
-                print(xs)
-                print(ys)
+        state = self.mpc.get_state_from_horizon(0)
+        acc = self.mpc.get_input_from_horizon(0)[:2]
 
-                print(i, "xr", self.mpc.get_xr(state, xs))
-                print(i, "yr", self.mpc.get_yr(state, ys))
-                print(i, "spline_x", self.mpc.get_spline_x(state[-2], xs))
-                print(i, "spline_y", self.mpc.get_spline_y(state[-2], ys))
+        p_blw = self.mpc.get_p_blw(state, xs, ys)
+        signed_d = self.mpc.get_signed_d(state, xs, ys)
+        d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
+        h_blw = (signed_d - d_blw) * np.exp(-p_blw)
 
-
-                print(i, "xr_dot", self.mpc.get_xrdot(state, xs, ys))
-                print(i, "yr_dot", self.mpc.get_yrdot(state, xs, ys))
-
-                print(i, "cbf_abv", cbf_abv)
-                print(i, "cbf_blw", cbf_blw)
-                print(i, "lfh_lgh_abv", lfh_abv + lghu_abv)
-                print(i, "lfh_lgh_blw", lfh_blw + lghu_blw)
-
-                print(i, "hdot_abv", self.mpc.get_hdot_abv(state, self.upper_coeffs, xs, ys))
-                print(i, "hdot_blw", self.mpc.get_hdot_blw(state, self.upper_coeffs, xs, ys))
-
-                print("POS IS", self.curve.pos(state[-2]))
-                print("VEL IS", self.curve.vel(state[-2]))
-
-                print('p_abv:', self.mpc.get_p_abv(state, xs, ys))
-                print('signed_d:', self.mpc.get_signed_d(state, xs, ys))
-
-                print("d_abv", self.mpc.get_d_abv(state, self.upper_coeffs))
-                print("d_blw", self.mpc.get_d_blw(state, self.lower_coeffs))
-
-
-            # obs[i * len(RLObs) : (i+1)*len(RLObs)] = [
-            #     float(cbf_abv), 
-            #     float(lfh_abv + lghu_abv),
-            #     float(cbf_blw),
-            #     float(lfh_blw + lghu_blw),
-            # ]
+        tmp_p = trajectory(len_start)
+        adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
+        adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
+        man_signed_d =  np.linalg.norm(tmp_p-state[:2])
+        man_d_blw = np.polyval(self.lower_coeffs[::-1], state[-2])
+        # print("state:", state)
+        # print("signed_d (casadi)", signed_d)
+        # print("signed_d (manual)", man_signed_d)
+        # print("signed_d (adjust)", adj_man_sd)
+        # print("d_blw (casadi)", d_blw)
+        # print("d_blw (manual)", man_d_blw)
+        # obs_dir = [self.mpc.get_obs_dirx(state, xs, ys), self.mpc.get_obs_diry(state, xs, ys)]
+        # print("obs_dir (casadi)", obs_dir)
+        # tmp_v = trajectory(len_start, 1)
+        # tmp_n = np.array([-tmp_v[1], tmp_v[0]])
+        # tmp_n = tmp_n / np.linalg.norm(tmp_n)
+        # print("obs_dir (manual)", tmp_n)
+        #
+        # signed_d = (state[0] - tmp_p[0]) * obs_dir[0] + (state[1]- tmp_p[1]) * obs_dir[1]
+        # print("signed_d(man caasdi calc)", signed_d)
+        # print("h_blw (casadi):", self.mpc.get_cbf_blw(state, self.lower_coeffs, xs, ys))
 
         obs[-self.N_alpha:] = [self.params["CBF_ALPHA_ABV"], self.params["CBF_ALPHA_BLW"]]
+
+
+        len_start = trajectory.get_closest_s(state[:2])
+        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
+        xs = adjusted_traj.get_ctrls_x()
+        ys = adjusted_traj.get_ctrls_y()
+
+        print("python xs:", xs)
+        print("python ys:", ys)
+
+        print("state:", state)
+        print("spline_x:", self.mpc.get_spline_x(state[4], xs))
+        print("spline_x:", self.mpc.get_spline_y(state[4], ys))
+        print("xr_dot:", self.mpc.get_xrdot(state, xs))
+        print("yr_dot:", self.mpc.get_yrdot(state, ys))
+
+        print("spline_x:", self.mpc.get_spline_x(6, xs))
+        print("spline_x:", self.mpc.get_spline_y(6, ys))
+
 
         return obs
 
@@ -415,9 +408,10 @@ class CBFEnv(gym.Env):
                 self.plotter = None
             return None
 
+        trajectory = self.mpc.get_trajectory()
         if self.plotter is None:
             self.plotter = BarnPlotter(
-                self.curve,
+                trajectory.view(),
                 self.occupancy_grid,
                 self.upper_coeffs,
                 self.lower_coeffs,
@@ -430,7 +424,7 @@ class CBFEnv(gym.Env):
         self.plotter.render(
             self.robot_state,
             self.current_ref,
-            self.curve,
+            trajectory.view(),
             self.mpc,
             self.upper_coeffs,
             self.lower_coeffs,
@@ -476,6 +470,8 @@ class CBFEnv(gym.Env):
         # reward model for having large constraint values
         worst_const = min(min_const_abv, min_const_blw)
         reward += 0.15 * np.tanh(worst_const)
+        print("worst_constraint:", worst_const)
+        print("CONSTRAINT_REWARD", reward)
 
         avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
         alphas = (obs[-self.N_alpha:] - avg) / avg
@@ -489,7 +485,7 @@ class CBFEnv(gym.Env):
         # print("largeness:", alpha_reward)
         alpha_reward -= (1./6) * np.sum((d[d < 0])**2)
 
-        # print("ALPHA_REWARD:", alpha_reward)
+        print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
@@ -514,14 +510,12 @@ class CBFEnv(gym.Env):
             horizon = self.knots[-1] - len_start
 
         if self.params["USE_CBF"]:
-            new_tubes = self.mpc.get_tubes(
+            trajectory = self.mpc.get_trajectory()
+            new_tubes = self.mpc.construct_tubes(
                 self.params["TUBE_DEGREE"],
                 100,
                 self.params["MAX_TUBE_WIDTH"] / 2.0,
-                self.xs,
-                self.ys,
-                3,
-                self.knots,
+                trajectory,
                 len_start,
                 horizon,
             )
@@ -544,7 +538,7 @@ class CBFEnv(gym.Env):
         jpsPath = vec_Vec2d()
         polys = vec_MatX4d()
 
-        if self.curve is None:
+        if not self.planner.has_trajectory:
             start = np.zeros((3, 4))
             start[:2, 0] = self.robot_state[:2]
 
@@ -575,17 +569,13 @@ class CBFEnv(gym.Env):
 
         if status == PlannerStatus.SUCCESS:
             self.knots, self.xs, self.ys = self.planner.get_arclen_traj()
-            self.curve = BezierCurve(knots=self.knots, xs=self.xs, ys=self.ys)
-
+            print('setting trajectory')
             self.mpc.set_trajectory(
-                self.curve.xs,
-                self.curve.ys,
-                self.curve.knots,
+                self.xs,
+                self.ys,
+                self.knots,
             )
-
-    def _dist_from_traj(self, point):
-        dists = np.linalg.norm(self.curve.pts - point[None, :], axis=1)
-        return np.min(dists)
+            print('done')
 
     def _plan(self, start, goal):
 

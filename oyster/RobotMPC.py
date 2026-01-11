@@ -5,7 +5,7 @@ import casadi as ca
 
 from pathlib import Path
 from py_mpcc import MPCCore
-from py_mpcc import get_tubes
+from py_mpcc import construct_tubes
 from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
 from py_mpcc import MPCType as Dynamics
@@ -86,7 +86,7 @@ class RobotMPC:
         self.traj_x = traj_x
         self.traj_y = traj_y
 
-        self.mpc.set_trajectory(self.traj_x, self.traj_y, 3, self.knots)
+        self.mpc.set_trajectory(self.traj_x, self.traj_y, self.knots)
 
     def set_occ_map(self, occupancy_grid):
         self.map_util = OccupancyGrid(occupancy_grid.info.width, occupancy_grid.info.height, occupancy_grid.info.resolution, float(occupancy_grid.info.origin.position[0]), float(occupancy_grid.info.origin.position[1]), np.array(occupancy_grid.data), np.array([253, 254]), np.array([255]))
@@ -134,6 +134,9 @@ class RobotMPC:
         u[1] = max(min(u[1], self.v_max), -self.v_max)
 
         return u
+
+    def get_trajectory(self):
+        return self.mpc.get_trajectory()
 
     def apply_control(self, u):
 
@@ -218,9 +221,32 @@ class RobotMPC:
     def get_horizon(self):
         return self.mpc.get_horizon()
 
-    def get_tubes(self, d, N, max_dist, xs, ys, degree, knots, len_start, horizon):
+    def get_state_from_horizon(self, ind):
+        horizon = self.mpc.get_horizon()
+        state = [
+            horizon.states.xs[ind],
+            horizon.states.ys[ind],
+            horizon.states.vs_x[ind],
+            horizon.states.vs_y[ind],
+            horizon.states.arclens[ind],
+            horizon.states.arclens_dot[ind],
+        ]
+
+        return np.array(state)
+
+    def get_input_from_horizon(self, ind):
+        horizon = self.mpc.get_horizon()
+        input_ = [
+            horizon.inputs.accs_x[ind],
+            horizon.inputs.accs_y[ind],
+            horizon.inputs.arclens_ddot[ind],
+        ]
+
+        return np.array(input_)
+
+    def construct_tubes(self, d, N, max_dist, trajectory, len_start, horizon):
         tubes = vec_VecXd()
-        get_tubes(int(d), N, max_dist, xs, ys, degree, knots, knots[-1],
+        construct_tubes(int(d), N, max_dist, trajectory, trajectory.get_extended_length(),
                   len_start, horizon, self.map_util, tubes)
         return tubes
 

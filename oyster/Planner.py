@@ -9,6 +9,8 @@ from py_planner import PlannerParams
 from py_planner import OccupancyGrid
 from MapLoader import parse_xml_file, generate_map_from_cylinders
 
+from scipy.interpolate import UnivariateSpline
+
 class PyPlanner:
 
     def __init__(self):
@@ -17,6 +19,7 @@ class PyPlanner:
 
         self.max_horizon = 3.0
         self.curr_horizon = self.max_horizon
+        self.has_trajectory = True
 
     def set_params(self, params):
         self.params = params
@@ -36,6 +39,7 @@ class PyPlanner:
 
         if status:
             self.curr_horizon = self.max_horizon
+            self.has_trajectory = True
         else:
             self.curr_horizon /= .9
 
@@ -46,6 +50,19 @@ class PyPlanner:
         knots = np.array([x.t for x in traj])
         xs = np.array([x.pos[0] for x in traj])
         ys = np.array([x.pos[1] for x in traj])
+
+        # trajx = UnivariateSpline(knots, xs, k=3, s=0)
+        # trajy = UnivariateSpline(knots, ys, k=3, s=0)
+        #
+        # trajx_d = trajx.derivative(n=1)
+        # trajy_d = trajy.derivative(n=1)
+        #
+        # for s in np.linspace(0, knots[-1], 100):
+        #     mag = np.sqrt(trajx_d(s)**2 + trajy_d(s)**2)
+        #     print(mag)
+        #
+        # exit(0)
+
         return knots, xs, ys
 
 def plot_jps(jps):

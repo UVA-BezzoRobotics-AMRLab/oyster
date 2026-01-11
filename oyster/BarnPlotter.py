@@ -50,18 +50,27 @@ class BarnPlotter:
         # self.fig.canvas.manager.full_screen_toggle()
 
         max_vel = mpc.get_params()["LINVEL"]
-        self.ax = plt.subplot2grid((2, 2), (0, 0), rowspan=2, colspan=1)
+        self.ax = plt.subplot2grid((3, 2), (0, 0), rowspan=3, colspan=1)
         self.ax.set_title(f"{self.dynamics.name}:   max_vel={max_vel} m/s")
         # self.ax.set_aspect("equal", adjustable="box")
 
-        self.ax_alphas = plt.subplot2grid((2, 2), (0, 1))
-        self.ax_cbfs = plt.subplot2grid((2, 2), (1, 1))
+        self.ax_alphas = plt.subplot2grid((3, 2), (0, 1))
+        self.ax_cbfs = plt.subplot2grid((3, 2), (1, 1))
+        self.ax_reward = plt.subplot2grid((3, 2), (2, 1))
+
+        self.ax_reward.set_ylabel("Reward")
+        self.ax_reward.set_xlabel("Time step")
+        self.ax_reward.grid(True, linestyle="--", alpha=0.5)
+
+        (self.reward_line,) = self.ax_reward.plot([], [], "k-", label="reward", linewidth=3)
+
+        self.reward_hist = []
 
         (self.alpha_upper_line,) = self.ax_alphas.plot(
-            [], [], "r-", label="alpha_upper", linewidth=2
+            [], [], "r-", label="alpha_upper", linewidth=3
         )
         (self.alpha_lower_line,) = self.ax_alphas.plot(
-            [], [], "b-", label="alpha_lower", linewidth=2
+            [], [], "b-", label="alpha_lower", linewidth=3
         )
 
         self.ax_alphas.set_ylabel(r"$\alpha$ values")
@@ -73,10 +82,10 @@ class BarnPlotter:
         self.steps = []
 
         (self.cbf_upper_line,) = self.ax_cbfs.plot(
-            [], [], "r-", label="cbf_abv", linewidth=2
+            [], [], "r-", label="cbf_abv", linewidth=3
         )
         (self.cbf_lower_line,) = self.ax_cbfs.plot(
-            [], [], "b-", label="cbf_blw", linewidth=2
+            [], [], "b-", label="cbf_blw", linewidth=3
         )
 
         self.ax_cbfs.set_ylabel(r"$h(x)$ values")
@@ -135,8 +144,6 @@ class BarnPlotter:
         y_min = oy
         y_max = oy + h * res
 
-        print(x_min, x_max, y_min, y_max)
-
         # draw onto main axis exactly once
         self.grid_im = self.ax.imshow(
             vis,
@@ -180,11 +187,15 @@ class BarnPlotter:
         (self.upper_tube_pts,) = ax.plot([], [], "ro", markersize=6)
         (self.lower_tube_pts,) = ax.plot([], [], "bo", markersize=6)
 
+    def log_reward(self, reward):
+        self.reward_hist.append(reward)
+
     def plot_tubes(self, curve, robot_state, mpc, upper_coeffs, lower_coeffs):
 
         # figure out where to start and stop the tubes
-        len_start = mpc.get_s_from_pose(robot_state[:2])
-        curve_len = curve.get_arclen()
+        trajectory = mpc.get_trajectory()
+        len_start = trajectory.get_closest_s(robot_state[:2])
+        curve_len = trajectory.get_true_length()
         if len_start > curve_len - 1e-2:
             return
 
@@ -192,9 +203,11 @@ class BarnPlotter:
         len_stop = min(len_start + ref_len, curve_len)
 
         ss = np.linspace(len_start, len_stop, 100)
-        traj = np.vstack([curve.trajx(ss), curve.trajy(ss)]).T
+        # traj = np.vstack([curve.trajx(ss), curve.trajy(ss)]).T
+        traj = np.vstack([trajectory(s) for s in ss])
 
-        tangents = np.column_stack([curve.trajx_d(ss), curve.trajy_d(ss)])
+        # tangents = np.column_stack([curve.trajx_d(ss), curve.trajy_d(ss)])
+        tangents = np.vstack([trajectory(s, 1) for s in ss])
         tangents /= np.linalg.norm(tangents, axis=1, keepdims=True)
 
         # compute normals
@@ -250,11 +263,12 @@ class BarnPlotter:
             #     exit(0)
             self.path_line.set_data(path[:, 0], path[:, 1])
 
-
         self.traj_line.set_data(curve.xs, curve.ys)
 
-        horizon = np.array(mpc.get_horizon())
-        self.mpc_horizon.set_data(horizon[:, 1], horizon[:, 2])
+        horizon = mpc.get_horizon()
+        horiz_len = horizon.length
+        horizon = np.array([mpc.get_state_from_horizon(i) for i in range(horiz_len)])
+        self.mpc_horizon.set_data(horizon[:, 0], horizon[:, 1])
 
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
 
@@ -263,13 +277,21 @@ class BarnPlotter:
         self.ax.set_xlim(x-half_sz, x+half_sz)
         self.ax.set_ylim(y-half_sz, y+half_sz)
 
+        # reward 
+        self.reward_line.set_data(self.steps, self.reward_hist)
+
+        self.ax_reward.relim()
+        self.ax_reward.autoscale_view()
+
+        t = len(self.steps)
+        self.steps.append(t)
+
+
         # alpha 
         params = mpc.get_params()
         alpha_upper = params["CBF_ALPHA_ABV"]
         alpha_lower = params["CBF_ALPHA_BLW"]
 
-        t = len(self.steps)
-        self.steps.append(t)
         self.alpha_upper_hist.append(alpha_upper)
         self.alpha_lower_hist.append(alpha_lower)
 
@@ -294,14 +316,16 @@ class BarnPlotter:
 
     def get_cbfs(self, mpc, upper_coeffs, lower_coeffs):
 
-        horizon = np.array(mpc.get_horizon())
-        len_start = mpc.get_s_from_pose(horizon[0, 1:3])
-        xs, ys = mpc.compute_adjusted_ref(len_start)
+        state = mpc.get_state_from_horizon(0)
+        trajectory = mpc.get_trajectory()
+        len_start = trajectory.get_closest_s(state[:2])
+        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"])).view()
+        xs, ys = adjusted_traj.xs, adjusted_traj.ys
 
         ref_len = mpc.get_params()["REF_LENGTH"]
 
-        cbf_abv = mpc.get_cbf_abv(horizon[0,1:7], upper_coeffs, xs, ys)
-        cbf_blw = mpc.get_cbf_blw(horizon[0,1:7], lower_coeffs, xs, ys)
+        cbf_abv = mpc.get_cbf_abv(state, upper_coeffs, xs, ys)
+        cbf_blw = mpc.get_cbf_blw(state, lower_coeffs, xs, ys)
 
         return float(cbf_abv), float(cbf_blw)
 
