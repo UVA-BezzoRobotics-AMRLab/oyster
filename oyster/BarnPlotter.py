@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib
 
@@ -5,9 +6,12 @@ import matplotlib
 
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+from datetime import datetime
 from oyster.RobotMPC import Dynamics
 from oyster.MapLoader import OccupancyGrid
 from matplotlib.patches import Circle, Polygon
+from matplotlib.animation import FFMpegWriter
 
 
 class BarnPlotter:
@@ -22,6 +26,8 @@ class BarnPlotter:
         robot_size=0.2,
         theta=np.pi / 3,
         render=True,
+        save_video=False,
+        fps=30,
     ):
         self.dynamics = dynamics
         self.robot_size = robot_size
@@ -39,8 +45,13 @@ class BarnPlotter:
 
         self.prev_states = []
 
+        self.save_video = save_video
+        self.fps = fps
+        self.writer = None
+
         if render:
             self.init_plot(curve, occ_grid, upper_coeffs, lower_coeffs, mpc)
+
 
     def init_plot(self, curve, occ_grid, upper_coeffs, lower_coeffs, mpc):
 
@@ -63,8 +74,10 @@ class BarnPlotter:
         self.ax_reward.grid(True, linestyle="--", alpha=0.5)
 
         (self.reward_line,) = self.ax_reward.plot([], [], "k-", label="reward", linewidth=3)
+        (self.total_reward_line,) = self.ax_reward.plot([], [], "r-", label="total_reward", linewidth=3)
 
         self.reward_hist = []
+        self.total_reward_hist = []
 
         (self.alpha_upper_line,) = self.ax_alphas.plot(
             [], [], "r-", label="alpha_upper", linewidth=3
@@ -122,6 +135,25 @@ class BarnPlotter:
         self.ax.add_patch(self.robot_patch)
 
         self.init_tubes(curve, upper_coeffs, lower_coeffs)
+
+        if self.save_video:
+            self.writer = FFMpegWriter(
+                fps=self.fps,
+                bitrate=1800,
+            )
+
+            script_dir = Path(__file__).parent.absolute()
+            video_folder = os.path.join(script_dir, "videos")
+            if not os.path.exists(video_folder):
+                os.mkdir(video_folder)
+
+            now = datetime.now()
+            t_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+            v_max = round(mpc.get_params()["LINVEL"], 2)
+            v_max_str = str(v_max).replace('.', '_')
+            dyn_str = str(self.dynamics).split('.')[-1]
+            fname = f"{dyn_str}_{v_max_str}_{t_str}.mp4"
+            self.writer.setup(self.fig, os.path.join(video_folder, fname), dpi=100)
 
     def init_grid(self, grid, ax=None):
         if ax is None:
@@ -306,10 +338,14 @@ class BarnPlotter:
         self.ax.set_ylim(y-half_sz, y+half_sz)
 
         # reward 
-        self.reward_line.set_data(self.steps, self.reward_hist)
+        if len(self.reward_hist) > 0:
+            reward_tot = np.sum(self.reward_hist)
+            self.total_reward_hist.append(reward_tot)
+            self.reward_line.set_data(self.steps, self.reward_hist)
+            self.total_reward_line.set_data(self.steps, self.total_reward_hist)
 
-        self.ax_reward.relim()
-        self.ax_reward.autoscale_view()
+            self.ax_reward.relim()
+            self.ax_reward.autoscale_view()
 
         t = len(self.steps)
         self.steps.append(t)
@@ -340,6 +376,9 @@ class BarnPlotter:
         self.ax_cbfs.autoscale_view()
 
         plt.pause(0.001)
+
+        if self.save_video:
+            self.writer.grab_frame()
 
     def get_cbfs(self, mpc, upper_coeffs, lower_coeffs):
 
@@ -372,5 +411,8 @@ class BarnPlotter:
         self.prev_states.clear()
 
     def close(self):
+        if self.save_video and self.writer is not None:
+            self.writer.finish()
+
         plt.close("all")
 

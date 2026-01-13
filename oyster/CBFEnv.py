@@ -46,11 +46,13 @@ class CBFEnv(gym.Env):
         world_num=0,
         N = 3,
         manual_step=False,
-        normalize_obs=True
+        normalize_obs=True,
+        save_video=False
     ):
 
         super(CBFEnv, self).__init__()
 
+        self.save_video = save_video
         self.should_normalize = normalize_obs
         self.manual_step = manual_step
         self.N_alpha = 2
@@ -232,8 +234,8 @@ class CBFEnv(gym.Env):
         self.params["CBF_ALPHA_ABV"] = alpha_abv
         self.params["CBF_ALPHA_BLW"] = alpha_blw
 
-        # if self.params["USE_CBF"]:
-        #     self.mpc.load_params(self.params)
+        if self.params["USE_CBF"]:
+            self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
@@ -287,8 +289,8 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
         # params["USE_CBF"] = False
-        params["CBF_ALPHA_ABV"] = 5.0
-        params["CBF_ALPHA_BLW"] = 5.0
+        # params["CBF_ALPHA_ABV"] = 1.0
+        # params["CBF_ALPHA_BLW"] = 1.0
 
         self.set_mpc(params)
 
@@ -441,6 +443,7 @@ class CBFEnv(gym.Env):
                 self.mpc,
                 self.dynamic_model,
                 0.05,
+                save_video=self.save_video,
             )
 
         self.plotter.add_state_to_path(self.robot_state[:2])
@@ -515,8 +518,8 @@ class CBFEnv(gym.Env):
 
         reward += alpha_reward
 
-        # solver_status = self.mpc.get_solver_status()
-        # reward += -.1 if not solver_status else 0.
+        solver_status = self.mpc.get_solver_status()
+        reward += -.2 if not solver_status else 0.
 
         if is_colliding:
             print("total reward before collision:", self.total_reward)
