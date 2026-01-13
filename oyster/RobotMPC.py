@@ -1,8 +1,7 @@
 import os
 import pathlib
 import numpy as np
-import casadi as ca
-
+from casadi import external
 from pathlib import Path
 from py_mpcc import MPCCore
 from py_mpcc import construct_tubes
@@ -10,6 +9,41 @@ from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
 from py_mpcc import MPCType as Dynamics
 
+def build_shared_lib(file):
+    script_dir = Path(__file__).parent.absolute()
+    og_dir = os.getcwd()
+    cpp_dir = os.path.join(script_dir, "cpp")
+    cpp_file = pathlib.Path(cpp_dir).glob('*.cpp')
+
+    so_fname = os.path.splitext(file)[0] + ".so"
+
+    os.chdir(cpp_dir)
+    if not os.path.exists(so_fname):
+        os.system(f"gcc -fPIC -shared {file} -o {so_fname}")
+    os.chdir(og_dir)
+
+    return os.path.join(cpp_dir, so_fname)
+
+def _unwrap(out):
+
+    if isinstance(out, dict):
+        vals = list(out.values())
+        if not vals[0].is_scalar():
+            return vals[0]
+
+        return float(vals[0]) if len(vals) == 1 else np.concatenate(
+            [np.asarray(v).ravel() for v in vals]
+        )
+
+def load_casadi_functions(so_path, fn_names):
+    fns = {}
+    for name in fn_names:
+        f = external(name, so_path)
+        # print(name, external(name, so_path).name_in())
+        # fns[name] = (lambda **args: _unwrap(external(name, so_path)(**args)))
+        fns[name] = (lambda f=f: (lambda **args: _unwrap(f(**args))))()
+
+    return fns
 
 class RobotMPC:
 
@@ -25,7 +59,6 @@ class RobotMPC:
         self.robot_state[:2] = init_pos[:2]
 
         if self.dyn_model == Dynamics.UNICYCLE:
-            print(init_pos[2])
             self.robot_state[2] = init_pos[2]
 
         self.dt = params["DT"]
@@ -35,51 +68,43 @@ class RobotMPC:
         self.prev_s = 0.0
 
         self.mpc = MPCCore(Dynamics.DOUBLE_INTEGRATOR)
+        # self.mpc = MPCCore(self.dyn_model)
         self.mpc.load_params(params)
         self.params = self.mpc.get_params()
 
-        script_dir = Path(__file__).parent.absolute()
-        og_dir = os.getcwd()
-        cpp_dir = os.path.join(script_dir, "cpp")
-        os.chdir(cpp_dir)
-        cpp_files = pathlib.Path(cpp_dir).glob('*.cpp')
-        so_files = pathlib.Path(cpp_dir).glob('*.so')
 
-        if len(list(so_files)) != 21:
-            # assuming one . in fname
-            for file in cpp_files:
-                fname = str(file).split(".")[0]
-                os.system(f"gcc -fPIC -shared {fname}.cpp -o {fname}.so")
+        fn_names = [
+            "xr", 
+            "yr",
+            "xr_dot",
+            "yr_dot",
+            "phi_r",
+            "e_c",
+            "e_l",
+            "signed_d",
+            "p_abv",
+            "p_blw",
+            "d_abv",
+            "d_blw", 
+            "h_abv",
+            "h_blw", 
+            "Lfh_abv",
+            "Lfh_blw",
+            "Lghu_abv",
+            "Lghu_blw",
+            "Lfv",
+            "Lgv",
+            "Lgvu",
+            "lyap_const"
+        ]
 
-        self.get_xr= ca.external('xr', os.path.join(cpp_dir, "./compute_xr.so"))
-        self.get_yr= ca.external('yr', os.path.join(cpp_dir, "./compute_yr.so"))
+        fname = "mpcc_casadi_double_integrator_internals.cpp"
+        if self.dyn_model == Dynamics.UNICYCLE:
+            fname = "mpcc_casadi_unicycle_internals.cpp"
 
-        self.get_spline_x = ca.external('xr', os.path.join(cpp_dir, "./compute_spline_x.so"))
-        self.get_spline_y = ca.external('yr', os.path.join(cpp_dir, "./compute_spline_y.so"))
-
-        self.get_xrdot = ca.external('xr_dot', os.path.join(cpp_dir, "./compute_xrdot.so"))
-        self.get_yrdot = ca.external('yr_dot', os.path.join(cpp_dir, "./compute_yrdot.so"))
-
-        self.get_obs_dirx = ca.external('obs_dirx', os.path.join(cpp_dir, "./compute_obs_dirx.so"))
-        self.get_obs_diry = ca.external('obs_diry', os.path.join(cpp_dir, "./compute_obs_diry.so"))
-
-        self.get_p_abv = ca.external('p_abv', os.path.join(cpp_dir, "./compute_p_abv.so"))
-        self.get_p_blw = ca.external('p_blw', os.path.join(cpp_dir, "./compute_p_blw.so"))
-
-        self.get_d_abv = ca.external('d_abv', os.path.join(cpp_dir, "./compute_d_abv.so"))
-        self.get_d_blw = ca.external('d_blw', os.path.join(cpp_dir, "./compute_d_blw.so"))
-        self.get_signed_d = ca.external('signed_d', os.path.join(cpp_dir, "./compute_signed_d.so"))
-        self.get_cbf_abv = ca.external('h_abv', os.path.join(cpp_dir, "./compute_cbf_abv.so"))
-        self.get_lfh_abv = ca.external('lfh_abv', os.path.join(cpp_dir, "./compute_lfh_abv.so"))
-        self.get_lgh_abv = ca.external('lgh_abv', os.path.join(cpp_dir, "./compute_lgh_abv.so"))
-        self.get_hdot_abv= ca.external('hdot_abv', os.path.join(cpp_dir, "./compute_hdot_abv.so"))
-        self.get_hdot_blw = ca.external('hdot_blw', os.path.join(cpp_dir, "./compute_hdot_blw.so"))
-
-        self.get_cbf_blw = ca.external('h_blw', os.path.join(cpp_dir, "./compute_cbf_blw.so"))
-        self.get_lfh_blw = ca.external('lfh_blw', os.path.join(cpp_dir, "./compute_lfh_blw.so"))
-        self.get_lgh_blw = ca.external('lgh_blw', os.path.join(cpp_dir, "./compute_lgh_blw.so"))
-
-        os.chdir(og_dir)
+        so_path = build_shared_lib(fname)
+        self.debug_fns = load_casadi_functions(so_path, fn_names)
+        
 
     def set_trajectory(self, traj_x, traj_y, knots):
         self.knots = knots
@@ -115,7 +140,7 @@ class RobotMPC:
             )
             self.prev_s = len_start
 
-            state = np.concatenate((self.robot_state, np.array([1e-2, s_dot])))
+            state = np.concatenate((self.robot_state, np.array([0, s_dot])))
             if self.dyn_model == Dynamics.UNICYCLE:
                 v = self.robot_state[3]
                 state[2] = v * np.cos(self.robot_state[2])
@@ -130,6 +155,7 @@ class RobotMPC:
         else:
             print("[RobotMPC] start length exceeds maximum length")
 
+        # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
         u[0] = max(min(u[0], self.v_max), -self.v_max)
         u[1] = max(min(u[1], self.v_max), -self.v_max)
 
@@ -150,6 +176,8 @@ class RobotMPC:
         elif self.dyn_model == Dynamics.UNICYCLE:
             # print("initial u:", u)
             u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
+            # u_uni = u
+            # u_uni[0] = max(min(u_uni[0], self.v_max), -self.v_max)
             # print("mapped u:", u_uni)
 
             self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt

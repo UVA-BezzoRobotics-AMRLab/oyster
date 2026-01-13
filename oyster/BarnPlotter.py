@@ -97,7 +97,7 @@ class BarnPlotter:
 
         if self.dynamics == Dynamics.DOUBLE_INTEGRATOR:
             self.robot_patch = Circle(
-                (0, 0), self.robot_size, color="blue", label="robot"
+                (0, 0), self.robot_size, color="blue", label="robot", zorder=100
             )
         else:
             self.robot_patch = Polygon(
@@ -114,6 +114,8 @@ class BarnPlotter:
         (self.path_line,) = self.ax.plot([], [], "b-", linewidth=1.5)
 
         (self.mpc_horizon,) = self.ax.plot([], [], "g", linewidth=3.0)
+
+        (self.mpc_trajectory_belief,) = self.ax.plot([], [], "r-", linewidth=1.5)
 
         self.init_grid(occ_grid)
 
@@ -242,6 +244,11 @@ class BarnPlotter:
         self.lower_tube_pts.set_data(lower_pts[:, 0], lower_pts[:, 1])
 
 
+    def plot_vector(self, start, vec):
+        end = np.array(start) + np.array(vec)
+        print(start)
+        self.ax.plot([start[0], end[0]], [start[1], end[1]])
+
     def render(self, robot_state, current_ref, curve, mpc, upper_coeffs, lower_coeffs):
         if self.dynamics == Dynamics.DOUBLE_INTEGRATOR:
             self.robot_patch.center = (robot_state[0], robot_state[1])
@@ -270,10 +277,31 @@ class BarnPlotter:
         horizon = np.array([mpc.get_state_from_horizon(i) for i in range(horiz_len)])
         self.mpc_horizon.set_data(horizon[:, 0], horizon[:, 1])
 
+        #################### TRAJ REFERENCE FROM MPC PERSPECTIVE ####################
+        state = mpc.get_state_from_horizon(0)
+        u = mpc.get_input_from_horizon(0)
+
+        trajectory = mpc.get_trajectory()
+        len_start = trajectory.get_closest_s(state[:2])
+        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"]))
+        traj_view = adjusted_traj.view()
+        xs = traj_view.xs
+        ys = traj_view.ys
+        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": mpc.get_params()["CLF_W_LAG"], "i7": mpc.get_params()["CLF_W_CONTOUR"], "i8": mpc.get_params()["CLF_GAMMA"]}
+
+        pts = np.zeros((30, 2))
+        count = 0
+        for i in np.linspace(0, mpc.get_params()["REF_LENGTH"], 30):
+            state[4] = i
+            pts[count,:] = [mpc.debug_fns["xr"](**args), mpc.debug_fns["yr"](**args)]
+            count += 1
+
+        self.mpc_trajectory_belief.set_data(pts[:,0], pts[:,1])
+
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
 
         x,y = robot_state[:2]
-        half_sz = 4
+        half_sz = 2
         self.ax.set_xlim(x-half_sz, x+half_sz)
         self.ax.set_ylim(y-half_sz, y+half_sz)
 
@@ -285,7 +313,6 @@ class BarnPlotter:
 
         t = len(self.steps)
         self.steps.append(t)
-
 
         # alpha 
         params = mpc.get_params()
@@ -317,6 +344,7 @@ class BarnPlotter:
     def get_cbfs(self, mpc, upper_coeffs, lower_coeffs):
 
         state = mpc.get_state_from_horizon(0)
+        u = mpc.get_input_from_horizon(0)
         trajectory = mpc.get_trajectory()
         len_start = trajectory.get_closest_s(state[:2])
         adjusted_traj = trajectory.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"])).view()
@@ -324,8 +352,13 @@ class BarnPlotter:
 
         ref_len = mpc.get_params()["REF_LENGTH"]
 
-        cbf_abv = mpc.get_cbf_abv(state, upper_coeffs, xs, ys)
-        cbf_blw = mpc.get_cbf_blw(state, lower_coeffs, xs, ys)
+        Q_l = mpc.get_params()["CLF_W_LAG"]
+        Q_c = mpc.get_params()["CLF_W_CONTOUR"]
+        gamma = mpc.get_params()["CLF_GAMMA"]
+
+        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": Q_l, "i7": Q_c, "i8": gamma}
+        cbf_abv = mpc.debug_fns["h_abv"](**args)
+        cbf_blw = mpc.debug_fns["h_blw"](**args)
 
         return float(cbf_abv), float(cbf_blw)
 

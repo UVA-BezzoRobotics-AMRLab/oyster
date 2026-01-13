@@ -21,13 +21,16 @@ w_angvel: 0.15
 w_angvel_d: .7
 
 w_lag_e: 100
-w_contour_e: .8
-w_speed: 1.0
+w_contour_e: 1.0
+w_speed: .80
 
 # CLF Params
 w_lyap_lag_e: 1
 w_lyap_contour_e: 1
-clf_gamma: .5
+clf_gamma: 10.0
+# w_lyap_lag_e: 1
+# w_lyap_contour_e: 1
+# clf_gamma: .5
 
 # CBF params
 use_cbf: true

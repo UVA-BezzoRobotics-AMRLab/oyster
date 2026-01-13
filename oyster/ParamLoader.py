@@ -38,6 +38,7 @@ class ParameterLoader:
             "REF_SAMPLES": params["mpc_ref_samples"],
             "CLF_GAMMA": params["clf_gamma"],
             "CLF_W_LAG": params["w_lyap_lag_e"],
+            "CLF_W_CONTOUR": params["w_lyap_contour_e"],
             "USE_CBF": params["use_cbf"],
             "CBF_ALPHA_ABV": params["cbf_alpha_abv"],
             "CBF_ALPHA_BLW": params["cbf_alpha_blw"],

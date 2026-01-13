@@ -232,8 +232,8 @@ class CBFEnv(gym.Env):
         self.params["CBF_ALPHA_ABV"] = alpha_abv
         self.params["CBF_ALPHA_BLW"] = alpha_blw
 
-        if self.params["USE_CBF"]:
-            self.mpc.load_params(self.params)
+        # if self.params["USE_CBF"]:
+        #     self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
@@ -256,13 +256,11 @@ class CBFEnv(gym.Env):
         is_done = self.step_count >= 250 or (len_start >= trajectory.get_true_length() - .2) or is_colliding
 
         self.total_reward += reward
-        print("step reward:", reward)
-        print("total reward:", self.total_reward)
+        # print("step reward:", reward)
+        # print("total reward:", self.total_reward)
         if self.plotter is not None:
             self.plotter.log_reward(reward)
 
-        if self.manual_step:
-            a = input()
 
         return (
             self.normalize_obs(obs) if self.should_normalize else obs,
@@ -288,9 +286,9 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
-        params["USE_CBF"] = False
-        params["CBF_ALPHA_ABV"] = 5
-        params["CBF_ALPHA_BLW"] = 5
+        # params["USE_CBF"] = False
+        params["CBF_ALPHA_ABV"] = 5.0
+        params["CBF_ALPHA_BLW"] = 5.0
 
         self.set_mpc(params)
 
@@ -326,37 +324,49 @@ class CBFEnv(gym.Env):
         for i in range(self.N_horizon):
             state = self.mpc.get_state_from_horizon(inds[i])
             # state[-2] += 1e-2
-            acc = self.mpc.get_input_from_horizon(inds[i])[:2]
+            u = self.mpc.get_input_from_horizon(inds[i])
+            acc = u[:2]
 
-            cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
-            lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
-            lgh_abv = self.mpc.get_lgh_abv(state, self.upper_coeffs, xs, ys)
-            lghu_abv = lgh_abv[:2] @ acc
+            args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"]}
 
-            cbf_blw = self.mpc.get_cbf_blw(state, self.lower_coeffs, xs, ys)
-            lfh_blw = self.mpc.get_lfh_blw(state, self.lower_coeffs, xs, ys)
-            lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
-            lghu_blw = lgh_blw[:2] @ acc
+            # cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
+            # lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
+            # lgh_abv = self.mpc.get_lgh_abv(state, self.upper_coeffs, xs, ys)
+            # lghu_abv = lgh_abv[:2] @ acc
+
+            cbf_abv = self.mpc.debug_fns["h_abv"](**args)
+            lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
+            lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
+
+            # cbf_blw = self.mpc.get_cbf_blw(state, self.lower_coeffs, xs, ys)
+            # lfh_blw = self.mpc.get_lfh_blw(state, self.lower_coeffs, xs, ys)
+            # lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
+            # lghu_blw = lgh_blw[:2] @ acc
+
+            cbf_blw = self.mpc.debug_fns["h_blw"](**args)
+            lfh_blw = self.mpc.debug_fns["Lfh_blw"](**args)
+            lghu_blw = self.mpc.debug_fns["Lghu_blw"](**args)
 
             obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
             obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
             obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
             obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
 
+        # p_blw = self.mpc.debug_fns["p_blw"](**args)
+        # signed_d = self.mpc.debug_fns["signed_d"](**args)
+        # d_blw = self.mpc.debug_fns["d_blw"](**args)
+        # h_blw = self.mpc.debug_fns["h_blw"](**args)
 
-        state = self.mpc.get_state_from_horizon(0)
-        acc = self.mpc.get_input_from_horizon(0)[:2]
+        # signed_d = self.mpc.get_signed_d(state, xs, ys)
+        # d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
+        # h_blw = (signed_d - d_blw) * np.exp(-p_blw)
 
-        p_blw = self.mpc.get_p_blw(state, xs, ys)
-        signed_d = self.mpc.get_signed_d(state, xs, ys)
-        d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
-        h_blw = (signed_d - d_blw) * np.exp(-p_blw)
+        # tmp_p = trajectory(len_start)
+        # adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
+        # adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
+        # man_signed_d =  np.linalg.norm(tmp_p-state[:2])
+        # man_d_blw = np.polyval(self.lower_coeffs[::-1], state[-2])
 
-        tmp_p = trajectory(len_start)
-        adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
-        adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
-        man_signed_d =  np.linalg.norm(tmp_p-state[:2])
-        man_d_blw = np.polyval(self.lower_coeffs[::-1], state[-2])
         # print("state:", state)
         # print("signed_d (casadi)", signed_d)
         # print("signed_d (manual)", man_signed_d)
@@ -376,24 +386,37 @@ class CBFEnv(gym.Env):
 
         obs[-self.N_alpha:] = [self.params["CBF_ALPHA_ABV"], self.params["CBF_ALPHA_BLW"]]
 
-
-        len_start = trajectory.get_closest_s(state[:2])
-        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
-        xs = adjusted_traj.get_ctrls_x()
-        ys = adjusted_traj.get_ctrls_y()
-
-        print("python xs:", xs)
-        print("python ys:", ys)
-
-        print("state:", state)
-        print("spline_x:", self.mpc.get_spline_x(state[4], xs))
-        print("spline_x:", self.mpc.get_spline_y(state[4], ys))
-        print("xr_dot:", self.mpc.get_xrdot(state, xs))
-        print("yr_dot:", self.mpc.get_yrdot(state, ys))
-
-        print("spline_x:", self.mpc.get_spline_x(6, xs))
-        print("spline_x:", self.mpc.get_spline_y(6, ys))
-
+        # print("python xs:", xs)
+        # print("python ys:", ys)
+        #
+        # # args = {"i0": state, "i1": xs}
+        # print("state:", state)
+        # print("xr:", self.mpc.debug_fns["xr"](**args))
+        # print("yr:", self.mpc.debug_fns["yr"](**args))
+        # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+        # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+        # print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
+        # # print("e_c:", self.mpc.debug_fns["e_c"](**args))
+        # # print("e_l:", self.mpc.debug_fns["e_l"](**args))
+        # h_abv = self.mpc.debug_fns["h_abv"](**args)
+        # lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
+        # lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
+        # h_blw= self.mpc.debug_fns["h_blw"](**args)
+        # lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
+        # lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
+        # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
+        # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
+        #
+        # # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
+        # print("Lfv", self.mpc.debug_fns["Lfv"](**args))
+        # # print("Lgv", self.mpc.debug_fns["Lgv"](**args))
+        # print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
+        # print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
+        #
+        # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
+        # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
+        # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
+        # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
 
         return obs
 
@@ -417,7 +440,7 @@ class CBFEnv(gym.Env):
                 self.lower_coeffs,
                 self.mpc,
                 self.dynamic_model,
-                0.25,
+                0.05,
             )
 
         self.plotter.add_state_to_path(self.robot_state[:2])
@@ -429,6 +452,9 @@ class CBFEnv(gym.Env):
             self.upper_coeffs,
             self.lower_coeffs,
         )
+
+        if self.manual_step:
+            a = input()
 
         return self.plotter.ax
 
@@ -470,8 +496,8 @@ class CBFEnv(gym.Env):
         # reward model for having large constraint values
         worst_const = min(min_const_abv, min_const_blw)
         reward += 0.15 * np.tanh(worst_const)
-        print("worst_constraint:", worst_const)
-        print("CONSTRAINT_REWARD", reward)
+        # print("worst_constraint:", worst_const)
+        # print("CONSTRAINT_REWARD", reward)
 
         avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
         alphas = (obs[-self.N_alpha:] - avg) / avg
@@ -485,7 +511,7 @@ class CBFEnv(gym.Env):
         # print("largeness:", alpha_reward)
         alpha_reward -= (1./6) * np.sum((d[d < 0])**2)
 
-        print("ALPHA_REWARD:", alpha_reward)
+        # print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
@@ -526,9 +552,9 @@ class CBFEnv(gym.Env):
 
         else:
             self.upper_coeffs = [0] * int(self.params["TUBE_DEGREE"]+1)
-            self.upper_coeffs[0] = 100
+            self.upper_coeffs[0] = 10
             self.lower_coeffs = [0] * int(self.params["TUBE_DEGREE"]+1)
-            self.lower_coeffs[0] = -100
+            self.lower_coeffs[0] = -10
 
         self.mpc.set_tubes(self.upper_coeffs, self.lower_coeffs)
 
@@ -552,11 +578,18 @@ class CBFEnv(gym.Env):
                 exit(-1)
 
         elif self.step_count % 5 == 0:
-            horizon = self.mpc.get_horizon()
+            # horizon = self.mpc.get_horizon()
 
+            init_state = self.mpc.get_state_from_horizon(2)
             start = np.zeros((3, 4))
             # start[:2,0] = self.current_ref
-            start[:2, 0] = self.robot_state[:2]
+            # start[:2, 0] = self.robot_state[:2]
+            start[:2, 0] = init_state[:2]
+            if self.dynamic_model == Dynamics.UNICYCLE:
+                theta = init_state[2]
+                start[:2, 1] = init_state[3] * np.array([np.sin(theta), np.cos(theta)])
+            elif self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
+                start[:2, 1] = np.array(init_state[4], init_state[3])
 
             goal = np.zeros((3, 4))
             goal[:2, 0] = [-2.25, 8.5]
