@@ -6,6 +6,9 @@ import xml.dom.minidom
 
 from lxml import etree
 
+ENV_Y = 12
+ENV_X = 4
+
 class Pose:
 
     def __init__(self):
@@ -27,7 +30,7 @@ class OccupancyGrid:
         self.data = []
 
 
-def parse_xml_file(xml_file):
+def parse_xml_file(xml_file, offset=0.0):
     # parse the xml file
 
     cylinder_data = []
@@ -49,9 +52,11 @@ def parse_xml_file(xml_file):
         pose = pose_element.text.strip().split()
         position = [float(p) for p in pose[:3]]
         radius = 0.075
+        if position[1] < 2.0:
+            continue
 
-        # shift everything back 5m in y direction
-        cylinder_data.append([position[0], position[1] - 5.0, radius])
+        # # shift everything back 5m in y direction
+        cylinder_data.append([position[0], position[1] + offset, radius])
 
     return cylinder_data
 
@@ -60,12 +65,15 @@ def generate_map_from_cylinders(cylinders, theta, dx, dy,
                                 inflation_cost=253,
                                 obstacle_cost=254):
     grid = OccupancyGrid()
-
-    grid.info.width = 600
-    grid.info.height = 600
+    # total_y = 2 * ENV_Y
+    # grid.info.width  = int(ENV_X / grid.info.resolution) + 200
+    # grid.info.height = int(total_y / grid.info.resolution) + 200
+    # grid.info.origin.position = np.array([-ENV_X/2, -1.0, 0.])
+    grid.info.width = 300
+    grid.info.height = 1200
     grid.info.resolution = 0.05
     grid.info.origin = Pose()
-    grid.info.origin.position = np.array([-15., -15., 0.])
+    grid.info.origin.position = np.array([-5., -30., 0.])
     grid.info.origin.orientation = np.array([0, 0, 0, 1])
 
     grid.data = [0] * grid.info.width * grid.info.height

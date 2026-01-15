@@ -67,11 +67,10 @@ class RobotMPC:
 
         self.prev_s = 0.0
 
-        self.mpc = MPCCore(Dynamics.DOUBLE_INTEGRATOR)
-        # self.mpc = MPCCore(self.dyn_model)
+        # self.mpc = MPCCore(Dynamics.DOUBLE_INTEGRATOR)
+        self.mpc = MPCCore(self.dyn_model)
         self.mpc.load_params(params)
         self.params = self.mpc.get_params()
-
 
         fn_names = [
             "xr", 
@@ -141,10 +140,10 @@ class RobotMPC:
             self.prev_s = len_start
 
             state = np.concatenate((self.robot_state, np.array([0, s_dot])))
-            if self.dyn_model == Dynamics.UNICYCLE:
-                v = self.robot_state[3]
-                state[2] = v * np.cos(self.robot_state[2])
-                state[3] = v * np.sin(self.robot_state[2])
+            # if self.dyn_model == Dynamics.UNICYCLE:
+            #     v = self.robot_state[3]
+            #     state[2] = v * np.cos(self.robot_state[2])
+            #     state[3] = v * np.sin(self.robot_state[2])
 
             # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
             #     v = np.linalg.norm(state[2:4])
@@ -154,10 +153,6 @@ class RobotMPC:
             u = self.mpc.solve(state, False)
         else:
             print("[RobotMPC] start length exceeds maximum length")
-
-        # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
-        u[0] = max(min(u[0], self.v_max), -self.v_max)
-        u[1] = max(min(u[1], self.v_max), -self.v_max)
 
         return u
 
@@ -174,12 +169,13 @@ class RobotMPC:
             self.robot_state[1] += self.robot_state[3] * self.dt
 
         elif self.dyn_model == Dynamics.UNICYCLE:
-            # print("initial u:", u)
-            u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
-            # u_uni = u
+            print("initial u:", u)
+            # u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
+            u_uni = u
             # u_uni[0] = max(min(u_uni[0], self.v_max), -self.v_max)
             # print("mapped u:", u_uni)
 
+            print("before", self.robot_state[2])
             self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt
             self.robot_state[1] += u_uni[0] * np.sin(self.robot_state[2]) * self.dt
             self.robot_state[2] += u_uni[1] * self.dt
@@ -187,6 +183,7 @@ class RobotMPC:
                 np.sin(self.robot_state[2]), np.cos(self.robot_state[2])
             )
             self.robot_state[3] = u_uni[0]
+            print("after", self.robot_state[2])
 
         # elif self.dyn_model == Dynamics.BICYCLE:
         #     # print("initial u:", u)

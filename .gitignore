@@ -6,5 +6,6 @@ envs/
 *.csv
 old_envs/
 output/
+videos/
 __pycache__/
 *.egg*

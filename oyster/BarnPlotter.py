@@ -69,7 +69,7 @@ class BarnPlotter:
         self.ax_cbfs = plt.subplot2grid((3, 2), (1, 1))
         self.ax_reward = plt.subplot2grid((3, 2), (2, 1))
 
-        self.ax_reward.set_ylabel("Reward")
+        self.ax_reward.set_ylabel("Velocity")
         self.ax_reward.set_xlabel("Time step")
         self.ax_reward.grid(True, linestyle="--", alpha=0.5)
 
@@ -333,7 +333,8 @@ class BarnPlotter:
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
 
         x,y = robot_state[:2]
-        half_sz = 2
+        # half_sz = 2
+        half_sz = 4
         self.ax.set_xlim(x-half_sz, x+half_sz)
         self.ax.set_ylim(y-half_sz, y+half_sz)
 
@@ -342,7 +343,7 @@ class BarnPlotter:
             reward_tot = np.sum(self.reward_hist)
             self.total_reward_hist.append(reward_tot)
             self.reward_line.set_data(self.steps, self.reward_hist)
-            self.total_reward_line.set_data(self.steps, self.total_reward_hist)
+            # self.total_reward_line.set_data(self.steps, self.total_reward_hist)
 
             self.ax_reward.relim()
             self.ax_reward.autoscale_view()

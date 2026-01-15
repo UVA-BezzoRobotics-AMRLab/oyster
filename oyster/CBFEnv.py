@@ -43,15 +43,17 @@ class CBFEnv(gym.Env):
 
     def __init__(
         self,
-        world_num=0,
+        world_num=[0],
         N = 3,
         manual_step=False,
         normalize_obs=True,
-        save_video=False
+        save_video=False,
+        max_step_count=250
     ):
 
         super(CBFEnv, self).__init__()
 
+        self.max_step_count = max_step_count
         self.save_video = save_video
         self.should_normalize = normalize_obs
         self.manual_step = manual_step
@@ -104,11 +106,22 @@ class CBFEnv(gym.Env):
         self.planner.set_params(self.planner_params)
 
         try:
-            obstacles = parse_xml_file(os.path.join(os.getenv("BARN_DATASET_PATH"), "world_files", f"world_{world_num}.world"))
-        except:
+            obstacles = []
+            offsets = [-5, 3]
+            for i, world in enumerate(world_num):
+                path = os.path.join(
+                        os.getenv("BARN_DATASET_PATH"), "world_files", f"world_{world}.world")
+                obs = parse_xml_file(path, offsets[i])
+                if len(obstacles) == 0:
+                    obstacles = obs
+                else:
+                    obstacles = np.concatenate((obstacles, obs))
+
+        except Exception as e:
             obstacles = None
             print("[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
                   "environment variable been set to it's top level directory location?")
+            print(str(e))
             exit(0)
 
         self.occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
@@ -172,16 +185,16 @@ class CBFEnv(gym.Env):
 
         # These values were computed empirically over 100k samples
         obs_mu = np.zeros(len(RLObs))
-        obs_mu[RLObs.CBF_ABV] = 0.3115
-        obs_mu[RLObs.LFH_LGH_ABV] = -0.046
-        obs_mu[RLObs.CBF_BLW] = 0.3077
-        obs_mu[RLObs.LFH_LGH_BLW] = -0.0492
+        obs_mu[RLObs.CBF_ABV] = 0.423
+        obs_mu[RLObs.LFH_LGH_ABV] = 1.0155
+        obs_mu[RLObs.CBF_BLW] = 0.1753
+        obs_mu[RLObs.LFH_LGH_BLW] = -0.17
 
         obs_std = np.zeros(len(RLObs))
-        obs_std[RLObs.CBF_ABV] = 0.113
-        obs_std[RLObs.LFH_LGH_ABV] = 0.356
-        obs_std[RLObs.CBF_BLW] = 0.1064
-        obs_std[RLObs.LFH_LGH_BLW] = 0.3451
+        obs_std[RLObs.CBF_ABV] = 0.2371
+        obs_std[RLObs.LFH_LGH_ABV] = 1.1442
+        obs_std[RLObs.CBF_BLW] = 0.1505
+        obs_std[RLObs.LFH_LGH_BLW] = 0.2709
 
         self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
         self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
@@ -255,13 +268,14 @@ class CBFEnv(gym.Env):
         # ---------------- reward ----------------
         reward = self.get_reward(obs, is_colliding)
 
-        is_done = self.step_count >= 250 or (len_start >= trajectory.get_true_length() - .2) or is_colliding
+        is_done = self.step_count >= self.max_step_count or (len_start >= trajectory.get_true_length() - .2) or is_colliding
 
         self.total_reward += reward
         # print("step reward:", reward)
         # print("total reward:", self.total_reward)
         if self.plotter is not None:
-            self.plotter.log_reward(reward)
+            # self.plotter.log_reward(reward)
+            self.plotter.log_reward(np.linalg.norm(self.robot_state[2:4]))
 
 
         return (
@@ -442,7 +456,7 @@ class CBFEnv(gym.Env):
                 self.lower_coeffs,
                 self.mpc,
                 self.dynamic_model,
-                0.05,
+                0.1,
                 save_video=self.save_video,
             )
 
@@ -567,12 +581,11 @@ class CBFEnv(gym.Env):
         jpsPath = vec_Vec2d()
         polys = vec_MatX4d()
 
+        goal = np.zeros((3, 4))
+        goal[:2, 0] = [-2.25, 18.5]
         if not self.planner.has_trajectory:
             start = np.zeros((3, 4))
             start[:2, 0] = self.robot_state[:2]
-
-            goal = np.zeros((3, 4))
-            goal[:2, 0] = [-2.25, 8.5]
 
             status, jpsPath, polys = self._plan(start, goal)
 
@@ -593,9 +606,6 @@ class CBFEnv(gym.Env):
                 start[:2, 1] = init_state[3] * np.array([np.sin(theta), np.cos(theta)])
             elif self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
                 start[:2, 1] = np.array(init_state[4], init_state[3])
-
-            goal = np.zeros((3, 4))
-            goal[:2, 0] = [-2.25, 8.5]
 
             self.planner.set_costmap(self.map_util)
             self.planner.set_start(start)
@@ -667,7 +677,7 @@ class RunningStats:
 def main(record_data, manual_step, world_num):
 
     if not record_data:
-        env = CBFEnv(world_num = world_num, manual_step=manual_step)
+        env = CBFEnv(world_num = [world_num], manual_step=manual_step)
         env.reset_task(1)
         done = False
         world_count = 0
@@ -695,7 +705,7 @@ def main(record_data, manual_step, world_num):
             for i in range(0, 300):
                 # obvsiouly cant normalize if we are trying to collect 
                 # distribution statistics
-                env = CBFEnv(world_num = i, normalize_obs=False)
+                env = CBFEnv(world_num = [i], normalize_obs=False)
 
                 done = False
                 for j in range(6):
