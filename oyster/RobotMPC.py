@@ -94,7 +94,7 @@ class RobotMPC:
             "Lfv",
             "Lgv",
             "Lgvu",
-            "lyap_const"
+            "lyap_const",
         ]
 
         fname = "mpcc_casadi_double_integrator_internals.cpp"
@@ -150,6 +150,8 @@ class RobotMPC:
             #     if v < 1e-3:
             #         state[2] = 1e-2
 
+            state[4] = max(state[4], 1e-6)
+            print("solve state", state)
             u = self.mpc.solve(state, False)
         else:
             print("[RobotMPC] start length exceeds maximum length")
@@ -169,13 +171,11 @@ class RobotMPC:
             self.robot_state[1] += self.robot_state[3] * self.dt
 
         elif self.dyn_model == Dynamics.UNICYCLE:
-            print("initial u:", u)
             # u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
             u_uni = u
             # u_uni[0] = max(min(u_uni[0], self.v_max), -self.v_max)
             # print("mapped u:", u_uni)
 
-            print("before", self.robot_state[2])
             self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt
             self.robot_state[1] += u_uni[0] * np.sin(self.robot_state[2]) * self.dt
             self.robot_state[2] += u_uni[1] * self.dt
@@ -183,7 +183,6 @@ class RobotMPC:
                 np.sin(self.robot_state[2]), np.cos(self.robot_state[2])
             )
             self.robot_state[3] = u_uni[0]
-            print("after", self.robot_state[2])
 
         # elif self.dyn_model == Dynamics.BICYCLE:
         #     # print("initial u:", u)
@@ -248,26 +247,26 @@ class RobotMPC:
 
     def get_state_from_horizon(self, ind):
         horizon = self.mpc.get_horizon()
-        state = [
-            horizon.states.xs[ind],
-            horizon.states.ys[ind],
-            horizon.states.vs_x[ind],
-            horizon.states.vs_y[ind],
-            horizon.states.arclens[ind],
-            horizon.states.arclens_dot[ind],
-        ]
+        # state = [
+        #     horizon.states.xs[ind],
+        #     horizon.states.ys[ind],
+        #     horizon.states.vs_x[ind],
+        #     horizon.states.vs_y[ind],
+        #     horizon.states.arclens[ind],
+        #     horizon.states.arclens_dot[ind],
+        # ]
 
-        return np.array(state)
+        return horizon.get_state_at_step(ind)
 
     def get_input_from_horizon(self, ind):
         horizon = self.mpc.get_horizon()
-        input_ = [
-            horizon.inputs.accs_x[ind],
-            horizon.inputs.accs_y[ind],
-            horizon.inputs.arclens_ddot[ind],
-        ]
+        # input_ = [
+        #     horizon.inputs.accs_x[ind],
+        #     horizon.inputs.accs_y[ind],
+        #     horizon.inputs.arclens_ddot[ind],
+        # ]
 
-        return np.array(input_)
+        return horizon.get_input_at_step(ind)
 
     def construct_tubes(self, d, N, max_dist, trajectory, len_start, horizon):
         tubes = vec_VecXd()

@@ -303,8 +303,8 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
         # params["USE_CBF"] = False
-        # params["CBF_ALPHA_ABV"] = 1.0
-        # params["CBF_ALPHA_BLW"] = 1.0
+        # params["CBF_ALPHA_ABV"] = 5.0
+        # params["CBF_ALPHA_BLW"] = 5.0
 
         self.set_mpc(params)
 
@@ -383,7 +383,20 @@ class CBFEnv(gym.Env):
         # man_signed_d =  np.linalg.norm(tmp_p-state[:2])
         # man_d_blw = np.polyval(self.lower_coeffs[::-1], state[-2])
 
-        # print("state:", state)
+        print("inputs:")
+        for i in range(horizon.length-1):
+            print(horizon.get_input_at_step(i))
+
+        state = self.mpc.get_state_from_horizon(0)
+        len_start = trajectory.get_closest_s(state[:2])
+        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
+        xs = adjusted_traj.get_ctrls_x()
+        ys = adjusted_traj.get_ctrls_y()
+
+        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"]}
+
+        print("robot state", self.robot_state)
+        print("horizon state:", state)
         # print("signed_d (casadi)", signed_d)
         # print("signed_d (manual)", man_signed_d)
         # print("signed_d (adjust)", adj_man_sd)
@@ -407,32 +420,40 @@ class CBFEnv(gym.Env):
         #
         # # args = {"i0": state, "i1": xs}
         # print("state:", state)
-        # print("xr:", self.mpc.debug_fns["xr"](**args))
-        # print("yr:", self.mpc.debug_fns["yr"](**args))
-        # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-        # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-        # print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
-        # # print("e_c:", self.mpc.debug_fns["e_c"](**args))
-        # # print("e_l:", self.mpc.debug_fns["e_l"](**args))
-        # h_abv = self.mpc.debug_fns["h_abv"](**args)
-        # lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
-        # lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
-        # h_blw= self.mpc.debug_fns["h_blw"](**args)
-        # lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
-        # lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
-        # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
-        # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
+        print("xr:", self.mpc.debug_fns["xr"](**args))
+        print("yr:", self.mpc.debug_fns["yr"](**args))
+        print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+        print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+        print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
+        # print("e_c:", self.mpc.debug_fns["e_c"](**args))
+        # print("e_l:", self.mpc.debug_fns["e_l"](**args))
+        h_abv = self.mpc.debug_fns["h_abv"](**args)
+        lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
+        lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
+        h_blw= self.mpc.debug_fns["h_blw"](**args)
+        lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
+        lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
+
+        print("signed d", self.mpc.debug_fns["signed_d"](**args))
+        print("p_abv", self.mpc.debug_fns["p_abv"](**args))
+        print("p_blw", self.mpc.debug_fns["p_blw"](**args))
+        phi_r = self.mpc.debug_fns["phi_r"](**args)
         #
-        # # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
+        # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
         # print("Lfv", self.mpc.debug_fns["Lfv"](**args))
         # # print("Lgv", self.mpc.debug_fns["Lgv"](**args))
-        # print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
-        # print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
+        print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
+        print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
         #
-        # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
-        # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
-        # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
-        # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
+        print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
+        print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
+        print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
+        print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
+        print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
+        print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
+
+        print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
+        print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
 
         return obs
 
@@ -603,7 +624,7 @@ class CBFEnv(gym.Env):
             start[:2, 0] = init_state[:2]
             if self.dynamic_model == Dynamics.UNICYCLE:
                 theta = init_state[2]
-                start[:2, 1] = init_state[3] * np.array([np.sin(theta), np.cos(theta)])
+                start[:2, 1] = init_state[3] * np.array([np.cos(theta), np.sin(theta)])
             elif self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
                 start[:2, 1] = np.array(init_state[4], init_state[3])
 
