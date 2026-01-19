@@ -139,7 +139,7 @@ class CBFEnv(gym.Env):
         if len(self.task_loader) == 0:
             raise ValueError("No parameter files found!")
 
-        self.task_idx = 0
+        self.task_idx = -1
 
         # i dont think these bounds every get used by the SAC algorithm
         self.low = np.array(
@@ -275,7 +275,10 @@ class CBFEnv(gym.Env):
         # print("total reward:", self.total_reward)
         if self.plotter is not None:
             # self.plotter.log_reward(reward)
-            self.plotter.log_reward(np.linalg.norm(self.robot_state[2:4]))
+            vel = self.robot_state[3]
+            if self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
+                vel = np.linalg.norm(self.robot_state[2:4])
+            self.plotter.log_reward(vel)
 
 
         return (
@@ -303,8 +306,8 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
         # params["USE_CBF"] = False
-        # params["CBF_ALPHA_ABV"] = 5.0
-        # params["CBF_ALPHA_BLW"] = 5.0
+        params["CBF_ALPHA_ABV"] = 5.0
+        params["CBF_ALPHA_BLW"] = 5.0
 
         self.set_mpc(params)
 
@@ -383,9 +386,9 @@ class CBFEnv(gym.Env):
         # man_signed_d =  np.linalg.norm(tmp_p-state[:2])
         # man_d_blw = np.polyval(self.lower_coeffs[::-1], state[-2])
 
-        print("inputs:")
-        for i in range(horizon.length-1):
-            print(horizon.get_input_at_step(i))
+        # print("inputs:")
+        # for i in range(horizon.length-1):
+        #     print(horizon.get_input_at_step(i))
 
         state = self.mpc.get_state_from_horizon(0)
         len_start = trajectory.get_closest_s(state[:2])
@@ -420,11 +423,12 @@ class CBFEnv(gym.Env):
         #
         # # args = {"i0": state, "i1": xs}
         # print("state:", state)
-        print("xr:", self.mpc.debug_fns["xr"](**args))
-        print("yr:", self.mpc.debug_fns["yr"](**args))
-        print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-        print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-        print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
+        # print("xr:", self.mpc.debug_fns["xr"](**args))
+        # print("yr:", self.mpc.debug_fns["yr"](**args))
+        # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+        # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+        # print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
+        # print("theta:", np.atan2(state[3], state[2]))
         # print("e_c:", self.mpc.debug_fns["e_c"](**args))
         # print("e_l:", self.mpc.debug_fns["e_l"](**args))
         h_abv = self.mpc.debug_fns["h_abv"](**args)
@@ -434,26 +438,26 @@ class CBFEnv(gym.Env):
         lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
         lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
 
-        print("signed d", self.mpc.debug_fns["signed_d"](**args))
-        print("p_abv", self.mpc.debug_fns["p_abv"](**args))
-        print("p_blw", self.mpc.debug_fns["p_blw"](**args))
+        # print("signed d", self.mpc.debug_fns["signed_d"](**args))
+        # print("p_abv", self.mpc.debug_fns["p_abv"](**args))
+        # print("p_blw", self.mpc.debug_fns["p_blw"](**args))
         phi_r = self.mpc.debug_fns["phi_r"](**args)
         #
         # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
         # print("Lfv", self.mpc.debug_fns["Lfv"](**args))
         # # print("Lgv", self.mpc.debug_fns["Lgv"](**args))
-        print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
-        print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
+        # print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
+        # print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
+        # #
+        # print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
+        # print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
+        # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
+        # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
+        # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
+        # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
         #
-        print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
-        print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
-        print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
-        print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
-        print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
-        print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
-
-        print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
-        print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
+        # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
+        # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
 
         return obs
 
@@ -699,7 +703,7 @@ def main(record_data, manual_step, world_num):
 
     if not record_data:
         env = CBFEnv(world_num = [world_num], manual_step=manual_step)
-        env.reset_task(1)
+        env.reset_task(0)
         done = False
         world_count = 0
         obs_count = 0
@@ -707,7 +711,7 @@ def main(record_data, manual_step, world_num):
             obs, reward, done, _ = env.step([0, 0])
             env.render()
 
-        env.reset_task(4)
+        env.reset_task(1)
         done = False
         while not done:
             obs, reward, done, _ = env.step([0, 0])
@@ -735,13 +739,9 @@ def main(record_data, manual_step, world_num):
                     done = False
 
                     while not done:
-                        try:
-                            obs, reward, done, _ = env.step([0, 0])
-                        except:
-                            break
-
+                        obs, reward, done, _ = env.step([0, 0])
                         obs = obs[:-2]
-                        print(obs)
+
                         if obs_count > n_samples:
                             break
 

@@ -69,6 +69,7 @@ class RobotMPC:
 
         # self.mpc = MPCCore(Dynamics.DOUBLE_INTEGRATOR)
         self.mpc = MPCCore(self.dyn_model)
+        print("loading params :)")
         self.mpc.load_params(params)
         self.params = self.mpc.get_params()
 
@@ -132,29 +133,30 @@ class RobotMPC:
     def get_control(self, len_start):
 
         u = [0, 0]
-        if len_start <= self.knots[-1] - 1e-2:
-            s_dot = min(
-                max((len_start - self.prev_s) / self.dt, 0),
-                np.sqrt(2 * self.v_max**2),
-            )
-            self.prev_s = len_start
-
-            state = np.concatenate((self.robot_state, np.array([0, s_dot])))
-            # if self.dyn_model == Dynamics.UNICYCLE:
-            #     v = self.robot_state[3]
-            #     state[2] = v * np.cos(self.robot_state[2])
-            #     state[3] = v * np.sin(self.robot_state[2])
-
-            # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
-            #     v = np.linalg.norm(state[2:4])
-            #     if v < 1e-3:
-            #         state[2] = 1e-2
-
-            state[4] = max(state[4], 1e-6)
-            print("solve state", state)
-            u = self.mpc.solve(state, False)
-        else:
-            print("[RobotMPC] start length exceeds maximum length")
+        # if len_start <= self.knots[-1] - 1e-2:
+        #     s_dot = min(
+        #         max((len_start - self.prev_s) / self.dt, 0),
+        #         np.sqrt(2 * self.v_max**2),
+        #     )
+        #     self.prev_s = len_start
+        #
+        #     state = np.concatenate((self.robot_state, np.array([0, s_dot])))
+        #     # if self.dyn_model == Dynamics.UNICYCLE:
+        #     #     v = self.robot_state[3]
+        #     #     state[2] = v * np.cos(self.robot_state[2])
+        #     #     state[3] = v * np.sin(self.robot_state[2])
+        #
+        #     # if self.dyn_model == Dynamics.DOUBLE_INTEGRATOR:
+        #     #     v = np.linalg.norm(state[2:4])
+        #     #     if v < 1e-3:
+        #     #         state[2] = 1e-2
+        #
+        #     state[4] = max(state[4], 1e-6)
+        #     print("solve state", state)
+        #     u = self.mpc.solve(state, False)
+        # else:
+        #     print("[RobotMPC] start length exceeds maximum length")
+        u = self.mpc.solve(self.robot_state, False)
 
         return u
 

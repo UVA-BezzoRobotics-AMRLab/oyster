@@ -73,7 +73,7 @@ def generate_map_from_cylinders(cylinders, theta, dx, dy,
     grid.info.height = 1200
     grid.info.resolution = 0.05
     grid.info.origin = Pose()
-    grid.info.origin.position = np.array([-5., -30., 0.])
+    grid.info.origin.position = np.array([-5., -10., 0.])
     grid.info.origin.orientation = np.array([0, 0, 0, 1])
 
     grid.data = [0] * grid.info.width * grid.info.height

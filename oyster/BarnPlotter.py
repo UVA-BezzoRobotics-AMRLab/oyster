@@ -328,13 +328,13 @@ class BarnPlotter:
             pts[count,:] = [mpc.debug_fns["xr"](**args), mpc.debug_fns["yr"](**args)]
             count += 1
 
-        self.mpc_trajectory_belief.set_data(pts[:,0], pts[:,1])
+        # self.mpc_trajectory_belief.set_data(pts[:,0], pts[:,1])
 
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
 
         x,y = robot_state[:2]
-        # half_sz = 2
-        half_sz = 4
+        half_sz = 2
+        # half_sz = 4
         self.ax.set_xlim(x-half_sz, x+half_sz)
         self.ax.set_ylim(y-half_sz, y+half_sz)
 
