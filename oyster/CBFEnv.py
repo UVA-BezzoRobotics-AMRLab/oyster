@@ -331,7 +331,7 @@ class CBFEnv(gym.Env):
         trajectory = self.mpc.get_trajectory()
 
         state = self.mpc.get_state_from_horizon(1)
-        len_start = trajectory.get_closest_s(state[:2])
+        len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
         adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
         xs = adjusted_traj.get_ctrls_x()
         ys = adjusted_traj.get_ctrls_y()
@@ -342,7 +342,9 @@ class CBFEnv(gym.Env):
         obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
         for i in range(self.N_horizon):
             state = self.mpc.get_state_from_horizon(inds[i])
-            # state[-2] += 1e-2
+            # some numerical issue is causing s state to be -1e-<large num> for some reason
+            # Casadi doesnt like that so enforcing a strict positive minimum. 
+            state[-2] = max(state[-2], 1e-6)
             u = self.mpc.get_input_from_horizon(inds[i])
             acc = u[:2]
 
