@@ -53,6 +53,7 @@ class CBFEnv(gym.Env):
 
         super(CBFEnv, self).__init__()
 
+        self.world_nums = world_num
         self.max_step_count = max_step_count
         self.save_video = save_video
         self.should_normalize = normalize_obs
@@ -104,37 +105,7 @@ class CBFEnv(gym.Env):
         self.curr_horizon = 3.0
 
         self.planner.set_params(self.planner_params)
-
-        try:
-            obstacles = []
-            offsets = [-5, 3]
-            for i, world in enumerate(world_num):
-                path = os.path.join(
-                        os.getenv("BARN_DATASET_PATH"), "world_files", f"world_{world}.world")
-                obs = parse_xml_file(path, offsets[i])
-                if len(obstacles) == 0:
-                    obstacles = obs
-                else:
-                    obstacles = np.concatenate((obstacles, obs))
-
-        except Exception as e:
-            obstacles = None
-            print("[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
-                  "environment variable been set to it's top level directory location?")
-            print(str(e))
-            exit(0)
-
-        self.occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
-        self.map_util = OccupancyGrid(
-            self.occupancy_grid.info.width,
-            self.occupancy_grid.info.height,
-            self.occupancy_grid.info.resolution,
-            float(self.occupancy_grid.info.origin.position[0]),
-            float(self.occupancy_grid.info.origin.position[1]),
-            np.array(self.occupancy_grid.data),
-            np.array([253, 254]),
-            np.array([255]),
-        )
+        self.set_world(self.world_nums)
 
         if len(self.task_loader) == 0:
             raise ValueError("No parameter files found!")
@@ -165,6 +136,41 @@ class CBFEnv(gym.Env):
 
         self.plotter = None
         self.reset()
+
+    def set_world(self, world_num):
+        try:
+            obstacles = []
+            # offsets = [-5, 3]
+            offsets = [-5 + 8 * i for i in range(len(world_num))]
+            print(world_num)
+            for i, world in enumerate(world_num):
+                print(i)
+                path = os.path.join(
+                        os.getenv("BARN_DATASET_PATH"), "world_files", f"world_{world}.world")
+                obs = parse_xml_file(path, offsets[i])
+                if len(obstacles) == 0:
+                    obstacles = obs
+                else:
+                    obstacles = np.concatenate((obstacles, obs))
+
+        except Exception as e:
+            obstacles = None
+            print("[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
+                  "environment variable been set to it's top level directory location?")
+            print(str(e))
+            exit(0)
+
+        self.occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
+        self.map_util = OccupancyGrid(
+            self.occupancy_grid.info.width,
+            self.occupancy_grid.info.height,
+            self.occupancy_grid.info.resolution,
+            float(self.occupancy_grid.info.origin.position[0]),
+            float(self.occupancy_grid.info.origin.position[1]),
+            np.array(self.occupancy_grid.data),
+            np.array([253, 254]),
+            np.array([255]),
+        )
 
 
     def set_mpc(self, params):
@@ -233,7 +239,7 @@ class CBFEnv(gym.Env):
         self.params = self.mpc.get_params()
 
         len_start = trajectory.get_closest_s(self.robot_state[:2])
-        self.get_and_set_tubes(len_start)
+        # self.get_and_set_tubes(len_start)
 
         action = np.array(action)
         action = action_unnormalize(
@@ -253,6 +259,12 @@ class CBFEnv(gym.Env):
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
         self.robot_state = self.mpc.apply_control(u)
+        tube = self.mpc.get_tube()
+        self.upper_coeffs = tube[0].get_coeffs()
+        self.lower_coeffs = tube[1].get_coeffs()
+
+        print(self.upper_coeffs)
+        print(self.lower_coeffs)
         # print("ROBOT_STATE after:", self.robot_state)
 
         self.current_ref = trajectory(len_start)
@@ -261,12 +273,17 @@ class CBFEnv(gym.Env):
         print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
+        print("getting param value vmax")
         v_max = self.params["LINVEL"]
 
+        print("is occupied?")
         is_colliding = self.map_util.is_occupied(self.robot_state[0], self.robot_state[1], "inflated")
+        print("done")
 
         # ---------------- reward ----------------
+        print("getting reward")
         reward = self.get_reward(obs, is_colliding)
+        print("done")
 
         is_done = self.step_count >= self.max_step_count or (len_start >= trajectory.get_true_length() - .2) or is_colliding
 
@@ -274,11 +291,13 @@ class CBFEnv(gym.Env):
         # print("step reward:", reward)
         # print("total reward:", self.total_reward)
         if self.plotter is not None:
+            print("logging speed")
             # self.plotter.log_reward(reward)
             vel = self.robot_state[3]
             if self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
                 vel = np.linalg.norm(self.robot_state[2:4])
             self.plotter.log_reward(vel)
+            print("done")
 
 
         return (
@@ -306,8 +325,8 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
         # params["USE_CBF"] = False
-        params["CBF_ALPHA_ABV"] = 5.0
-        params["CBF_ALPHA_BLW"] = 5.0
+        # params["CBF_ALPHA_ABV"] = 2.5
+        # params["CBF_ALPHA_BLW"] = 2.5
 
         self.set_mpc(params)
 
@@ -570,37 +589,6 @@ class CBFEnv(gym.Env):
 
         return reward
 
-    def get_and_set_tubes(self, len_start):
-        if not hasattr(self, "knots"):
-            return
-
-        ref_len = self.params["REF_LENGTH"]
-        horizon = ref_len
-        if len_start + horizon > self.knots[-1]:
-            horizon = self.knots[-1] - len_start
-
-        if self.params["USE_CBF"]:
-            trajectory = self.mpc.get_trajectory()
-            new_tubes = self.mpc.construct_tubes(
-                self.params["TUBE_DEGREE"],
-                100,
-                self.params["MAX_TUBE_WIDTH"] / 2.0,
-                trajectory,
-                len_start,
-                horizon,
-            )
-
-            if len(new_tubes[0]) > 0:
-                self.upper_coeffs = new_tubes[0]
-                self.lower_coeffs = new_tubes[1]
-
-        else:
-            self.upper_coeffs = [0] * int(self.params["TUBE_DEGREE"]+1)
-            self.upper_coeffs[0] = 10
-            self.lower_coeffs = [0] * int(self.params["TUBE_DEGREE"]+1)
-            self.lower_coeffs[0] = -10
-
-        self.mpc.set_tubes(self.upper_coeffs, self.lower_coeffs)
 
     def update_trajectory(self):
 
@@ -609,7 +597,8 @@ class CBFEnv(gym.Env):
         polys = vec_MatX4d()
 
         goal = np.zeros((3, 4))
-        goal[:2, 0] = [-2.25, 18.5]
+        gy = -2.5 + 10 * len(self.world_nums)
+        goal[:2, 0] = [-2.25, gy]
         if not self.planner.has_trajectory:
             start = np.zeros((3, 4))
             start[:2, 0] = self.robot_state[:2]

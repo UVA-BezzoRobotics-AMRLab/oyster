@@ -52,6 +52,7 @@ class ParameterLoader:
             "MIN_H_VAL": params["min_h_val"],
             "MAX_H_VAL": params["max_h_val"],
             "TUBE_DEGREE": params["tube_poly_degree"],
+            "TUBE_SAMPLES": params["tube_num_samples"],
             "MAX_TUBE_WIDTH": params["max_tube_width"],
             "ANGLE_GAIN": params["prop_gain"],
             "ANGLE_THRESH": params["prop_gain_thresh"],

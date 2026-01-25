@@ -8,6 +8,7 @@ from py_mpcc import construct_tubes
 from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
 from py_mpcc import MPCType as Dynamics
+from py_mpcc  import MapConfig
 
 def build_shared_lib(file):
     script_dir = Path(__file__).parent.absolute()
@@ -52,7 +53,6 @@ class RobotMPC:
         self.dyn_model = params["DYNAMIC_MODEL"]
         print("dynamic model: ", self.dyn_model)
 
-        self.map_util = None
 
         # robot state: x, y, vx, vy
         self.robot_state = np.zeros(4, dtype=np.float64)
@@ -114,17 +114,16 @@ class RobotMPC:
         self.mpc.set_trajectory(self.traj_x, self.traj_y, self.knots)
 
     def set_occ_map(self, occupancy_grid):
-        self.map_util = OccupancyGrid(occupancy_grid.info.width, occupancy_grid.info.height, occupancy_grid.info.resolution, float(occupancy_grid.info.origin.position[0]), float(occupancy_grid.info.origin.position[1]), np.array(occupancy_grid.data), np.array([253, 254]), np.array([255]))
-
-    def set_tubes(self, upper_coeffs, lower_coeffs):
-
-        if bool(self.mpc.get_params()["USE_CBF"]) is False:
-            upper_coeffs = np.zeros(7)
-            upper_coeffs[0] = 100
-            lower_coeffs = np.zeros(7)
-            lower_coeffs[0] = 100
-
-        self.mpc.set_tubes([upper_coeffs, lower_coeffs])
+        config = MapConfig()
+        config.width = occupancy_grid.info.width
+        config.height = occupancy_grid.info.height
+        config.resolution = occupancy_grid.info.resolution
+        config.origin = occupancy_grid.info.origin.position[:2]
+        config.occupied_values = np.array([253, 254])
+        config.no_information_values = np.array([255])
+        self.mpc.set_map(config, np.array(occupancy_grid.data))
+        # self.map_util = OccupancyGrid(config, np.array(occupancy_grid.data))
+        # self.map_util = OccupancyGrid(occupancy_grid.info.width, occupancy_grid.info.height, occupancy_grid.info.resolution, float(occupancy_grid.info.origin.position[0]), float(occupancy_grid.info.origin.position[1]), np.array(occupancy_grid.data), np.array([253, 254]), np.array([255]))
 
     def load_params(self, params):
         self.mpc.load_params(params)
@@ -132,7 +131,7 @@ class RobotMPC:
 
     def get_control(self, len_start):
 
-        u = [0, 0]
+        # u = [0, 0]
         # if len_start <= self.knots[-1] - 1e-2:
         #     s_dot = min(
         #         max((len_start - self.prev_s) / self.dt, 0),
@@ -260,6 +259,7 @@ class RobotMPC:
 
         return horizon.get_state_at_step(ind)
 
+
     def get_input_from_horizon(self, ind):
         horizon = self.mpc.get_horizon()
         # input_ = [
@@ -270,15 +270,9 @@ class RobotMPC:
 
         return horizon.get_input_at_step(ind)
 
-    def construct_tubes(self, d, N, max_dist, trajectory, len_start, horizon):
-        tubes = vec_VecXd()
-        construct_tubes(int(d), N, max_dist, trajectory, trajectory.get_extended_length(),
-                  len_start, horizon, self.map_util, tubes)
-        return tubes
+    def get_tube(self):
+        return self.mpc.get_tube()
 
-    # def get_cbf_abv(self, x, d_abv_coeff, x_coeff, y_coeff):
-    #     return get_cbf_abv(x, d_abv_coeff, x_coeff, y_coeff)
-        
 
     def _di_to_uni_cmd_mapper(self, state, u, kp=10.0):
 
