@@ -66,12 +66,17 @@ class CBFEnv(gym.Env):
 
         # each task is loaded from parameter list
         self.task_loader = self.load_tasks()
-        self.traj_schedule = [15, 10]
+        self.traj_schedule = [15, 5]
 
         self.did_collide = False
 
         self.epoch = 0
         self.epoch_incremented = False
+        # 282 is a really nice world!!!
+        # large alpha trouble from 140 to 285
+        # mid alpha trouble from 255 to  285
+        # include some other worlds for training as well...
+        self.worlds = [280, 290, 140, 245, 285, 255, 265, 275, 5, 282, 296, 111]
 
         self.planner = PyPlanner()
         self.step_count = 0
@@ -132,6 +137,7 @@ class CBFEnv(gym.Env):
 
         # for some reason _goal is needed for PEARL, but it can be
         # set to anything
+        self._start = None
         self._goal = None
 
         self.plotter = None
@@ -172,14 +178,13 @@ class CBFEnv(gym.Env):
             np.array([255]),
         )
 
-
     def set_mpc(self, params):
 
         self.params = copy.deepcopy(params)
         self.dynamic_model = self.params["DYNAMIC_MODEL"]
         # self.params["USE_CBF"] = True
 
-        init_pose = np.concatenate(([-2.25, -2.5], [np.pi / 2]))
+        init_pose = np.concatenate((self._start[:2, 0], [np.pi / 2]))
         self.mpc = RobotMPC(init_pose, self.params)
         self.mpc.set_occ_map(self.occupancy_grid)
         self.robot_state = self.mpc.get_robot_state()
@@ -191,16 +196,24 @@ class CBFEnv(gym.Env):
 
         # These values were computed empirically over 100k samples
         obs_mu = np.zeros(len(RLObs))
-        obs_mu[RLObs.CBF_ABV] = 0.423
-        obs_mu[RLObs.LFH_LGH_ABV] = 1.0155
-        obs_mu[RLObs.CBF_BLW] = 0.1753
-        obs_mu[RLObs.LFH_LGH_BLW] = -0.17
+        obs_mu[RLObs.CBF_ABV] = 0.2953
+        obs_mu[RLObs.LFH_LGH_ABV] = -0.0163
+        obs_mu[RLObs.CBF_BLW] = 0.3125
+        obs_mu[RLObs.LFH_LGH_BLW] = -0.0195
+        # obs_mu[RLObs.CBF_ABV] = 0.423
+        # obs_mu[RLObs.LFH_LGH_ABV] = 1.0155
+        # obs_mu[RLObs.CBF_BLW] = 0.1753
+        # obs_mu[RLObs.LFH_LGH_BLW] = -0.17
 
         obs_std = np.zeros(len(RLObs))
-        obs_std[RLObs.CBF_ABV] = 0.2371
-        obs_std[RLObs.LFH_LGH_ABV] = 1.1442
-        obs_std[RLObs.CBF_BLW] = 0.1505
-        obs_std[RLObs.LFH_LGH_BLW] = 0.2709
+        obs_std[RLObs.CBF_ABV] = 0.1011
+        obs_std[RLObs.LFH_LGH_ABV] = 0.1497
+        obs_std[RLObs.CBF_BLW] = 0.105
+        obs_std[RLObs.LFH_LGH_BLW] = 0.1687
+        # obs_std[RLObs.CBF_ABV] = 0.2371
+        # obs_std[RLObs.LFH_LGH_ABV] = 1.1442
+        # obs_std[RLObs.CBF_BLW] = 0.1505
+        # obs_std[RLObs.LFH_LGH_BLW] = 0.2709
 
         self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
         self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
@@ -273,17 +286,12 @@ class CBFEnv(gym.Env):
         print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
-        print("getting param value vmax")
         v_max = self.params["LINVEL"]
 
-        print("is occupied?")
         is_colliding = self.map_util.is_occupied(self.robot_state[0], self.robot_state[1], "inflated")
-        print("done")
 
         # ---------------- reward ----------------
-        print("getting reward")
         reward = self.get_reward(obs, is_colliding)
-        print("done")
 
         is_done = self.step_count >= self.max_step_count or (len_start >= trajectory.get_true_length() - .2) or is_colliding
 
@@ -291,13 +299,11 @@ class CBFEnv(gym.Env):
         # print("step reward:", reward)
         # print("total reward:", self.total_reward)
         if self.plotter is not None:
-            print("logging speed")
             # self.plotter.log_reward(reward)
             vel = self.robot_state[3]
             if self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
                 vel = np.linalg.norm(self.robot_state[2:4])
             self.plotter.log_reward(vel)
-            print("done")
 
 
         return (
@@ -320,15 +326,33 @@ class CBFEnv(gym.Env):
         min_alpha = params["MIN_ALPHA"]
         max_alpha = params["MAX_ALPHA"]
 
+        self._goal = np.zeros((3, 4))
+        self._goal[:2, 0] = [-2.25, -2.5]
+        self._start = np.zeros((3, 4))
+        self._start[:2, 0] = [-2.25, -2.5 + (10 * len(self.world_nums))]
+
         if self.epoch >= self.traj_schedule[0]:
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
+            # randomly swap the two goals... 
+            r = np.random.randint(2)
+            if r == 1:
+                tmp = self._goal
+                self._goal = self._start
+                self._start = tmp
+
+        delta = self.epoch - self.traj_schedule[0]
+        if delta >= 0 and delta % self.traj_schedule[1] == 0:
+            world_num = self.worlds[delta // self.traj_schedule[1]]
+            self.set_world([world_num])
+
         # params["USE_CBF"] = False
-        # params["CBF_ALPHA_ABV"] = 2.5
-        # params["CBF_ALPHA_BLW"] = 2.5
+        # params["CBF_ALPHA_ABV"] = 5
+        # params["CBF_ALPHA_BLW"] = 5
 
         self.set_mpc(params)
+        print("params:", params)
 
         self.planner.has_trajectory = False
         self.plotter = None
@@ -392,8 +416,50 @@ class CBFEnv(gym.Env):
             obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
             obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
 
+            if np.any(np.isnan(obs)):
+                # # args = {"i0": state, "i1": xs}
+                print(i, "state:", state)
+                signed_d = self.mpc.debug_fns["signed_d"](**args)
+                print(i, "signed_d", signed_d)
+                print(i, "xr:", self.mpc.debug_fns["xr"](**args))
+                print(i, "yr:", self.mpc.debug_fns["yr"](**args))
+                print(i, "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+                print(i, "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+                print(i, "phi_r:", self.mpc.debug_fns["phi_r"](**args))
+                print(i, "theta:", np.atan2(state[3], state[2]))
+                print(i, "p_abv", self.mpc.debug_fns["p_abv"](**args))
+                print(i, "p_blw", self.mpc.debug_fns["p_blw"](**args))
+                print(i, "h_abv:", self.mpc.debug_fns["h_abv"](**args))
+                print(i, "h_blw:", self.mpc.debug_fns["h_blw"](**args))
+
+                # print("e_c:", self.mpc.debug_fns["e_c"](**args))
+                # print("e_l:", self.mpc.debug_fns["e_l"](**args))
+                # h_abv = self.mpc.debug_fns["h_abv"](**args)
+                # lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
+                # lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
+                # h_blw= self.mpc.debug_fns["h_blw"](**args)
+                # lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
+                # lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
+
+                # print("signed d", self.mpc.debug_fns["signed_d"](**args))
+                phi_r = self.mpc.debug_fns["phi_r"](**args)
+                #
+                # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
+                # print("Lfv", self.mpc.debug_fns["Lfv"](**args))
+                # # print("Lgv", self.mpc.debug_fns["Lgv"](**args))
+                # print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
+                # print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
+                # #
+                # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
+                # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
+                # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
+                # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
+                #
+                # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
+                # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
+
+        obs[-self.N_alpha:] = [self.params["CBF_ALPHA_ABV"], self.params["CBF_ALPHA_BLW"]]
         # p_blw = self.mpc.debug_fns["p_blw"](**args)
-        # signed_d = self.mpc.debug_fns["signed_d"](**args)
         # d_blw = self.mpc.debug_fns["d_blw"](**args)
         # h_blw = self.mpc.debug_fns["h_blw"](**args)
 
@@ -419,66 +485,6 @@ class CBFEnv(gym.Env):
 
         args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"]}
 
-        print("robot state", self.robot_state)
-        print("horizon state:", state)
-        # print("signed_d (casadi)", signed_d)
-        # print("signed_d (manual)", man_signed_d)
-        # print("signed_d (adjust)", adj_man_sd)
-        # print("d_blw (casadi)", d_blw)
-        # print("d_blw (manual)", man_d_blw)
-        # obs_dir = [self.mpc.get_obs_dirx(state, xs, ys), self.mpc.get_obs_diry(state, xs, ys)]
-        # print("obs_dir (casadi)", obs_dir)
-        # tmp_v = trajectory(len_start, 1)
-        # tmp_n = np.array([-tmp_v[1], tmp_v[0]])
-        # tmp_n = tmp_n / np.linalg.norm(tmp_n)
-        # print("obs_dir (manual)", tmp_n)
-        #
-        # signed_d = (state[0] - tmp_p[0]) * obs_dir[0] + (state[1]- tmp_p[1]) * obs_dir[1]
-        # print("signed_d(man caasdi calc)", signed_d)
-        # print("h_blw (casadi):", self.mpc.get_cbf_blw(state, self.lower_coeffs, xs, ys))
-
-        obs[-self.N_alpha:] = [self.params["CBF_ALPHA_ABV"], self.params["CBF_ALPHA_BLW"]]
-
-        # print("python xs:", xs)
-        # print("python ys:", ys)
-        #
-        # # args = {"i0": state, "i1": xs}
-        # print("state:", state)
-        # print("xr:", self.mpc.debug_fns["xr"](**args))
-        # print("yr:", self.mpc.debug_fns["yr"](**args))
-        # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-        # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-        # print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
-        # print("theta:", np.atan2(state[3], state[2]))
-        # print("e_c:", self.mpc.debug_fns["e_c"](**args))
-        # print("e_l:", self.mpc.debug_fns["e_l"](**args))
-        h_abv = self.mpc.debug_fns["h_abv"](**args)
-        lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
-        lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
-        h_blw= self.mpc.debug_fns["h_blw"](**args)
-        lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
-        lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
-
-        # print("signed d", self.mpc.debug_fns["signed_d"](**args))
-        # print("p_abv", self.mpc.debug_fns["p_abv"](**args))
-        # print("p_blw", self.mpc.debug_fns["p_blw"](**args))
-        phi_r = self.mpc.debug_fns["phi_r"](**args)
-        #
-        # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
-        # print("Lfv", self.mpc.debug_fns["Lfv"](**args))
-        # # print("Lgv", self.mpc.debug_fns["Lgv"](**args))
-        # print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
-        # print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
-        # #
-        # print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
-        # print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
-        # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
-        # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
-        # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
-        # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
-        #
-        # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
-        # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
 
         return obs
 
@@ -534,8 +540,9 @@ class CBFEnv(gym.Env):
     def get_reward(self, obs, is_colliding):
         reward = 0
 
-        min_const_abv = 1e6
-        min_const_blw = 1e6
+        # min_const_abv = 1e6
+        # min_const_blw = 1e6
+        constraints = []
         for i in range(self.N_horizon):
             cbf_abv = obs[i * len(RLObs) + RLObs.CBF_ABV]
             lfh_lghu_abv = obs[i * len(RLObs) + RLObs.LFH_LGH_ABV]
@@ -553,14 +560,25 @@ class CBFEnv(gym.Env):
             # print(i, "const_abv", const_abv)
             # print(i, "const_blw", const_blw)
 
-            min_const_abv = min(min_const_abv, const_abv)
-            min_const_blw = min(min_const_blw, const_blw)
+            # min_const_abv = min(min_const_abv, const_abv)
+            # min_const_blw = min(min_const_blw, const_blw)
+            constraints.append(const_abv)
+            constraints.append(const_blw)
+
+        rho = 10 
+        cons = np.array(constraints)
+
+        c_min = np.min(cons)
+        exp_cons = np.exp(-rho * (cons - c_min))
+        worst_const = c_min - (1/ rho) * np.log(np.mean(np.sum(exp_cons)))
 
         # reward model for having large constraint values
-        worst_const = min(min_const_abv, min_const_blw)
-        reward += 0.15 * np.tanh(worst_const)
-        # print("worst_constraint:", worst_const)
-        # print("CONSTRAINT_REWARD", reward)
+        # worst_const = min(min_const_abv, min_const_blw)
+        a = 7.0
+        reward += (np.log(2.0) - np.log1p(np.exp(-a * worst_const))) / a
+        reward = np.clip(reward, -5 * np.log(2.0)/a, np.log(2.0)/a)
+        print("worst_constraint:", worst_const)
+        print("CONSTRAINT_REWARD", reward)
 
         avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
         alphas = (obs[-self.N_alpha:] - avg) / avg
@@ -572,16 +590,17 @@ class CBFEnv(gym.Env):
         # alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
 
         # print("largeness:", alpha_reward)
-        alpha_reward -= (1./6) * np.sum((d[d < 0])**2)
+        alpha_reward -= (1./3) * np.sum((d[d < 0])**2)
 
         # print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
         solver_status = self.mpc.get_solver_status()
-        reward += -.2 if not solver_status else 0.
+        reward += -.05 if not solver_status else 0.
 
         if is_colliding:
+            self.did_collide = True
             print("total reward before collision:", self.total_reward)
             reward = -5.0
 
@@ -596,14 +615,14 @@ class CBFEnv(gym.Env):
         jpsPath = vec_Vec2d()
         polys = vec_MatX4d()
 
-        goal = np.zeros((3, 4))
-        gy = -2.5 + 10 * len(self.world_nums)
-        goal[:2, 0] = [-2.25, gy]
+        # goal = np.zeros((3, 4))
+        # gy = -2.5 + (10 * len(self.world_nums))
+        # goal[:2, 0] = [-2.25, gy]
         if not self.planner.has_trajectory:
             start = np.zeros((3, 4))
             start[:2, 0] = self.robot_state[:2]
 
-            status, jpsPath, polys = self._plan(start, goal)
+            status, jpsPath, polys = self._plan(start, self._goal)
 
             if not status:
                 print("failed to find initial trajectory")
@@ -625,7 +644,7 @@ class CBFEnv(gym.Env):
 
             self.planner.set_costmap(self.map_util)
             self.planner.set_start(start)
-            self.planner.set_goal(goal)
+            self.planner.set_goal(self._goal)
 
             status = self.planner.plan(jpsPath, polys)
 
@@ -688,13 +707,15 @@ class RunningStats:
 
 @click.command()
 @click.option("--world_num", default=0)
+@click.option("--task_num", default=0)
+@click.option("--world_sweep", is_flag=True, default=False)
 @click.option("--record_data", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(record_data, manual_step, world_num):
+def main(record_data, manual_step, task_num, world_sweep, world_num):
 
-    if not record_data:
+    if not record_data and not world_sweep:
         env = CBFEnv(world_num = [world_num], manual_step=manual_step)
-        env.reset_task(0)
+        env.reset_task(task_num)
         done = False
         world_count = 0
         obs_count = 0
@@ -702,13 +723,7 @@ def main(record_data, manual_step, world_num):
             obs, reward, done, _ = env.step([0, 0])
             env.render()
 
-        env.reset_task(1)
-        done = False
-        while not done:
-            obs, reward, done, _ = env.step([0, 0])
-            env.render()
-
-    else:
+    elif not world_sweep:
         world_count = 0
         obs_count = 0
         n_samples = 1e5
@@ -779,6 +794,38 @@ def main(record_data, manual_step, world_num):
         print("obs_std[RLObs.LFH_LGH_BLW]",  np.round(np.average(cbf_dot_blw_std), 4))
 
         print("ROW_COUNT:", obs_count)
+
+    else:
+        outfile = "out.txt"
+        with open(outfile, "w", newline="") as f:
+            f.write("Below are the simulation results for the test trials\n")
+            f.write("WORLD\tTASK\tSUCCESS\tSTEPS\n")
+
+        env = CBFEnv()
+        for task in range(6):
+
+            for world_n in range(0, 300, 5):
+                env.set_world([world_n])
+
+                for i in range(3):
+                    env.reset_task(task)
+
+                    done = False
+                    while not done:
+                        obs, reward, done, _ = env.step([0, 0])
+                        obs = obs[:-2]
+
+                    with open(outfile, "a", newline="") as f:
+                        f.write(
+                            "%d\t%d\t%d\t%d\t\n"
+                            % (
+                                world_n,
+                                task,
+                                not env.did_collide,
+                                env.step_count,
+                            )
+                        )
+
 
 if __name__ == "__main__":
     main()

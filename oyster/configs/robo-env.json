@@ -9,7 +9,7 @@
     "algo_params": {
         "num_iterations": 80,
         "meta_batch": 4,
-        "discount_factor": 0.99, 
+        "discount": 0.99, 
         "num_initial_steps": 250,
         "num_steps_prior": 400,
         "num_steps_posterior": 0,
