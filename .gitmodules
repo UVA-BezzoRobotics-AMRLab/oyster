@@ -1,0 +1,3 @@
+[submodule "third_party/mpcc"]
+	path = third_party/mpcc
+	url = git@github.com:UVA-BezzoRobotics-AMRLab/mpcc.git
