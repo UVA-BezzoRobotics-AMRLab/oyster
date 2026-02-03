@@ -23,9 +23,9 @@ from py_planner import vec_Vec2d, vec_MatX4d
 from py_planner import PlannerStatus
 from py_planner import PlannerParams
 from py_planner import OccupancyGrid
-from MapLoader import parse_xml_file, generate_map_from_cylinders
 
 from py_mpcc import Polynomial
+from py_mpcc import extend_trajectory
 
 class RLObs(IntEnum):
     CBF_ABV = 0
@@ -184,7 +184,9 @@ class CBFEnv(gym.Env):
         self.dynamic_model = self.params["DYNAMIC_MODEL"]
         # self.params["USE_CBF"] = True
 
-        init_pose = np.concatenate((self._start[:2, 0], [np.pi / 2]))
+        init_theta = np.atan2(self._goal[1, 0] - self._start[1, 0], self._goal[0, 0] - self._start[0, 0])
+
+        init_pose = np.concatenate((self._start[:2, 0], [init_theta]))
         self.mpc = RobotMPC(init_pose, self.params)
         self.mpc.set_occ_map(self.occupancy_grid)
         self.robot_state = self.mpc.get_robot_state()
@@ -193,6 +195,10 @@ class CBFEnv(gym.Env):
         self.upper_coeffs[0] = self.params["MAX_TUBE_WIDTH"] / 2.0
         self.lower_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
         self.lower_coeffs[0] = -self.params["MAX_TUBE_WIDTH"] / 2.0
+
+        if not self.params["USE_CBF"]:
+            self.upper_coeffs[0] = 100
+            self.lower_coeffs[0] = -100
 
         # These values were computed empirically over 100k samples
         obs_mu = np.zeros(len(RLObs))
@@ -266,8 +272,8 @@ class CBFEnv(gym.Env):
         self.params["CBF_ALPHA_ABV"] = alpha_abv
         self.params["CBF_ALPHA_BLW"] = alpha_blw
 
-        if self.params["USE_CBF"]:
-            self.mpc.load_params(self.params)
+        # if self.params["USE_CBF"]:
+        #     self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
@@ -276,8 +282,8 @@ class CBFEnv(gym.Env):
         self.upper_coeffs = tube[0].get_coeffs()
         self.lower_coeffs = tube[1].get_coeffs()
 
-        print(self.upper_coeffs)
-        print(self.lower_coeffs)
+        # print(self.upper_coeffs)
+        # print(self.lower_coeffs)
         # print("ROBOT_STATE after:", self.robot_state)
 
         self.current_ref = trajectory(len_start)
@@ -293,7 +299,7 @@ class CBFEnv(gym.Env):
         # ---------------- reward ----------------
         reward = self.get_reward(obs, is_colliding)
 
-        is_done = self.step_count >= self.max_step_count or (len_start >= trajectory.get_true_length() - .2) or is_colliding
+        is_done = self.step_count >= self.max_step_count or (len_start >= self.knots[-1] - .2) or is_colliding
 
         self.total_reward += reward
         # print("step reward:", reward)
@@ -331,6 +337,10 @@ class CBFEnv(gym.Env):
         self._start = np.zeros((3, 4))
         self._start[:2, 0] = [-2.25, -2.5 + (10 * len(self.world_nums))]
 
+        tmp = self._goal
+        self._goal = self._start
+        self._start = tmp
+
         if self.epoch >= self.traj_schedule[0]:
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
@@ -348,8 +358,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # params["USE_CBF"] = False
-        # params["CBF_ALPHA_ABV"] = 5
-        # params["CBF_ALPHA_BLW"] = 5
+        params["CBF_ALPHA_ABV"] = 8.0
+        params["CBF_ALPHA_BLW"] = 8.0
 
         self.set_mpc(params)
         print("params:", params)
@@ -372,6 +382,8 @@ class CBFEnv(gym.Env):
                              self.N_horizon)
 
         trajectory = self.mpc.get_trajectory()
+        # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_params()["REF_LENGTH"])
+        # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_trajectory().get_arclen() + 2)
 
         state = self.mpc.get_state_from_horizon(1)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
@@ -391,7 +403,7 @@ class CBFEnv(gym.Env):
             u = self.mpc.get_input_from_horizon(inds[i])
             acc = u[:2]
 
-            args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"]}
+            args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"], "i9": adjusted_traj.get_arclen()}
 
             # cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
             # lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
@@ -415,6 +427,7 @@ class CBFEnv(gym.Env):
             obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
             obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
             obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
+
 
             if np.any(np.isnan(obs)):
                 # # args = {"i0": state, "i1": xs}
@@ -483,8 +496,30 @@ class CBFEnv(gym.Env):
         xs = adjusted_traj.get_ctrls_x()
         ys = adjusted_traj.get_ctrls_y()
 
-        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"]}
+        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"], "i9": adjusted_traj.get_arclen()}
 
+        print("ADJUSTED LENGTH: ", adjusted_traj.get_arclen())
+        # print("state:", state)
+        # signed_d = self.mpc.debug_fns["signed_d"](**args)
+        # print("signed_d", signed_d)
+        # print("xr:", self.mpc.debug_fns["xr"](**args))
+        # print("yr:", self.mpc.debug_fns["yr"](**args))
+        # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+        # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+        # print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
+        # print("theta:", np.atan2(state[3], state[2]))
+        # print("p_abv", self.mpc.debug_fns["p_abv"](**args))
+        # print("p_blw", self.mpc.debug_fns["p_blw"](**args))
+        # print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
+        # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
+        # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
+        # print("alpha_abv:", self.params["CBF_ALPHA_ABV"])
+        # print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
+        # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
+        # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
+        # print("alpha_blw:", self.params["CBF_ALPHA_BLW"])
+        # print("const_abv", self.mpc.debug_fns["Lfh_abv"](**args) + self.mpc.debug_fns["Lghu_abv"](**args) + self.params["CBF_ALPHA_ABV"]* self.mpc.debug_fns["h_abv"](**args))
+        # print("const_blw", self.mpc.debug_fns["Lfh_blw"](**args) + self.mpc.debug_fns["Lghu_blw"](**args) + self.params["CBF_ALPHA_BLW"] * self.mpc.debug_fns["h_blw"](**args))
 
         return obs
 
@@ -500,6 +535,8 @@ class CBFEnv(gym.Env):
             return None
 
         trajectory = self.mpc.get_trajectory()
+        # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.params["REF_LENGTH"])
+        # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_trajectory().get_arclen() + 2)
         if self.plotter is None:
             self.plotter = BarnPlotter(
                 trajectory.view(),

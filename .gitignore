@@ -2,10 +2,11 @@
 *.xlsx
 cpp/
 envs/
-*.txt
+oyster/*.txt
 *.csv
 old_envs/
 output/
 videos/
 __pycache__/
 *.egg*
+build/

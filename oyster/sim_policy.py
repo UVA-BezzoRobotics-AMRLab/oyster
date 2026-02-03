@@ -35,7 +35,7 @@ def sim_policy(
     # create multi-task environment and sample tasks
     max_path_length = 1000
     env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    # # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
@@ -44,7 +44,7 @@ def sim_policy(
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
     N = 3
     eval_tasks=list(tasks[-variant['n_eval_tasks']+ N -1:-variant['n_eval_tasks'] + N])
-    eval_tasks=list([tasks[-1]])
+    # eval_tasks=list([tasks[-1]])
     print(
         "testing on {} test tasks, {} trajectories each".format(
             len(eval_tasks), num_trajs

@@ -4,26 +4,14 @@ import numpy as np
 from casadi import external
 from pathlib import Path
 from py_mpcc import MPCCore
-from py_mpcc import construct_tubes
 from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
 from py_mpcc import MPCType as Dynamics
 from py_mpcc  import MapConfig
 
-def build_shared_lib(file):
-    script_dir = Path(__file__).parent.absolute()
-    og_dir = os.getcwd()
-    cpp_dir = os.path.join(script_dir, "cpp")
-    cpp_file = pathlib.Path(cpp_dir).glob('*.cpp')
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CASADI_LIB_DIR = REPO_ROOT / "build" / "acados_code_gen" / "casadi"
 
-    so_fname = os.path.splitext(file)[0] + ".so"
-
-    os.chdir(cpp_dir)
-    if not os.path.exists(so_fname):
-        os.system(f"gcc -fPIC -shared {file} -o {so_fname}")
-    os.chdir(og_dir)
-
-    return os.path.join(cpp_dir, so_fname)
 
 def _unwrap(out):
 
@@ -36,7 +24,38 @@ def _unwrap(out):
             [np.asarray(v).ravel() for v in vals]
         )
 
-def load_casadi_functions(so_path, fn_names):
+def load_casadi_functions(mpc_type):
+    fn_names = [
+        "xr", 
+        "yr",
+        "xr_dot",
+        "yr_dot",
+        "phi_r",
+        "e_c",
+        "e_l",
+        "signed_d",
+        "p_abv",
+        "p_blw",
+        "d_abv",
+        "d_blw", 
+        "h_abv",
+        "h_blw", 
+        "Lfh_abv",
+        "Lfh_blw",
+        "Lghu_abv",
+        "Lghu_blw",
+        "Lfv",
+        "Lgv",
+        "Lgvu",
+        "lyap_const",
+    ]
+
+    so_file = "mpcc_casadi_double_integrator_internals.so"
+    if mpc_type == Dynamics.UNICYCLE:
+        so_file = "mpcc_casadi_unicycle_internals.so"
+
+    so_path = os.path.join(CASADI_LIB_DIR, so_file)
+    print("SO_PATH", so_path)
     fns = {}
     for name in fn_names:
         f = external(name, so_path)
@@ -69,42 +88,10 @@ class RobotMPC:
 
         # self.mpc = MPCCore(Dynamics.DOUBLE_INTEGRATOR)
         self.mpc = MPCCore(self.dyn_model)
-        print("loading params :)")
         self.mpc.load_params(params)
         self.params = self.mpc.get_params()
 
-        fn_names = [
-            "xr", 
-            "yr",
-            "xr_dot",
-            "yr_dot",
-            "phi_r",
-            "e_c",
-            "e_l",
-            "signed_d",
-            "p_abv",
-            "p_blw",
-            "d_abv",
-            "d_blw", 
-            "h_abv",
-            "h_blw", 
-            "Lfh_abv",
-            "Lfh_blw",
-            "Lghu_abv",
-            "Lghu_blw",
-            "Lfv",
-            "Lgv",
-            "Lgvu",
-            "lyap_const",
-        ]
-
-        fname = "mpcc_casadi_double_integrator_internals.cpp"
-        if self.dyn_model == Dynamics.UNICYCLE:
-            fname = "mpcc_casadi_unicycle_internals.cpp"
-
-        so_path = build_shared_lib(fname)
-        self.debug_fns = load_casadi_functions(so_path, fn_names)
-        
+        self.debug_fns = load_casadi_functions(self.dyn_model)
 
     def set_trajectory(self, traj_x, traj_y, knots):
         self.knots = knots

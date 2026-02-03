@@ -1,4 +1,5 @@
 import os
+import copy
 import numpy as np
 import matplotlib
 
@@ -12,6 +13,8 @@ from oyster.RobotMPC import Dynamics
 from oyster.MapLoader import OccupancyGrid
 from matplotlib.patches import Circle, Polygon
 from matplotlib.animation import FFMpegWriter
+
+from py_mpcc import extend_trajectory
 
 
 class BarnPlotter:
@@ -217,6 +220,13 @@ class BarnPlotter:
             [], [], "b-", label="lower tube", linewidth=2.5
         )
 
+        (self.upper_tube_belief,) = ax.plot(
+            [], [], "r--", label="upper tube", linewidth=2, alpha=0.5,
+        )
+        (self.lower_tube_belief,) = ax.plot(
+            [], [], "b--", label="lower tube", linewidth=2, alpha=0.5,
+        )
+
         # markers for sampled tube points
         (self.upper_tube_pts,) = ax.plot([], [], "ro", markersize=6)
         (self.lower_tube_pts,) = ax.plot([], [], "bo", markersize=6)
@@ -226,17 +236,35 @@ class BarnPlotter:
 
     def plot_tubes(self, curve, robot_state, mpc, upper_coeffs, lower_coeffs):
 
-        # figure out where to start and stop the tubes
         trajectory = mpc.get_trajectory()
+        # trajectory = extend_trajectory(mpc.get_trajectory(), mpc.get_params()["REF_LENGTH"])
+        # trajectory = extend_trajectory(mpc.get_trajectory(), mpc.get_trajectory().get_arclen() + 2)
         len_start = trajectory.get_closest_s(robot_state[:2])
-        curve_len = trajectory.get_true_length()
-        if len_start > curve_len - 1e-2:
-            return
 
-        ref_len = mpc.get_params()["REF_LENGTH"]
-        len_stop = min(len_start + ref_len, curve_len)
+        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"]))
+        traj_view = adjusted_traj.view()
+        xs = traj_view.xs
+        ys = traj_view.ys
+        state = mpc.get_state_from_horizon(0)
+        args = {"i0": state, "i1": mpc.get_input_from_horizon(0), "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": mpc.get_params()["CLF_W_LAG"], "i7": mpc.get_params()["CLF_W_CONTOUR"], "i8": mpc.get_params()["CLF_GAMMA"], "i9": traj_view.arclen}
 
-        ss = np.linspace(len_start, len_stop, 100)
+        horizon = mpc.get_params()["REF_LENGTH"]
+        if len_start + horizon > trajectory.get_arclen():
+            horizon = trajectory.get_arclen() - len_start
+
+        tau = np.linspace(0, horizon, 100)
+        upper_d = np.zeros((100,))
+        lower_d = np.zeros((100,))
+
+        for i in range(100):
+            state[4] = tau[i]
+            upper_d[i] = mpc.debug_fns["d_abv"](**args)
+            lower_d[i] = mpc.debug_fns["d_blw"](**args)
+
+        upper_d_actual = np.polyval(upper_coeffs[::-1], tau / horizon)
+        lower_d_actual = np.polyval(lower_coeffs[::-1], tau / horizon)
+
+        ss = np.linspace(len_start, len_start + horizon, 100)
         # traj = np.vstack([curve.trajx(ss), curve.trajy(ss)]).T
         traj = np.vstack([trajectory(s) for s in ss])
 
@@ -247,33 +275,34 @@ class BarnPlotter:
         # compute normals
         normals = np.column_stack([-tangents[:, 1], tangents[:, 0]])
 
-        tau = np.linspace(0, len_stop - len_start, 100)
-        upper_d = np.polyval(upper_coeffs[::-1], tau)
-        lower_d = np.polyval(lower_coeffs[::-1], tau)
-
-
         # offset trajectory
         upper = traj + upper_d[:, None] * normals
         lower = traj + lower_d[:, None] * normals
+
+        upper_actual = traj + upper_d_actual[:, None] * normals
+        lower_actual = traj + lower_d_actual[:, None] * normals
 
         # plot tubes
         self.upper_tube_line.set_data(upper[:, 0], upper[:, 1])
         self.lower_tube_line.set_data(lower[:, 0], lower[:, 1])
 
-        sample_tau = np.array([0.0, 0.5, 1.0])
-        remaining_len = len_stop - len_start
-        sample_tau = np.clip(sample_tau, 0.0, remaining_len)
+        self.upper_tube_belief.set_data(upper_actual[:, 0], upper_actual[:, 1])
+        self.lower_tube_belief.set_data(lower_actual[:, 0], lower_actual[:, 1])
 
-        idx = np.searchsorted(tau, sample_tau)
-
-        du = np.polyval(upper_coeffs[::-1], sample_tau)
-        dl = np.polyval(lower_coeffs[::-1], sample_tau)
-
-        upper_pts = traj[idx] + du[:, None] * normals[idx]
-        lower_pts = traj[idx] + dl[:, None] * normals[idx]
-
-        self.upper_tube_pts.set_data(upper_pts[:, 0], upper_pts[:, 1])
-        self.lower_tube_pts.set_data(lower_pts[:, 0], lower_pts[:, 1])
+        # sample_tau = np.array([0.0, 0.5, 1.0])
+        # remaining_len = len_stop - len_start
+        # sample_tau = np.clip(sample_tau, 0.0, remaining_len)
+        #
+        # idx = np.searchsorted(tau, sample_tau)
+        #
+        # du = np.polyval(upper_coeffs[::-1], sample_tau / trajectory.get_arclen())
+        # dl = np.polyval(lower_coeffs[::-1], sample_tau / trajectory.get_arclen())
+        #
+        # upper_pts = traj[idx] + du[:, None] * normals[idx]
+        # lower_pts = traj[idx] + dl[:, None] * normals[idx]
+        #
+        # self.upper_tube_pts.set_data(upper_pts[:, 0], upper_pts[:, 1])
+        # self.lower_tube_pts.set_data(lower_pts[:, 0], lower_pts[:, 1])
 
 
     def plot_vector(self, start, vec):
@@ -314,16 +343,18 @@ class BarnPlotter:
         u = mpc.get_input_from_horizon(0)
 
         trajectory = mpc.get_trajectory()
+        # trajectory = extend_trajectory(mpc.get_trajectory(), mpc.get_params()["REF_LENGTH"])
+        # trajectory = extend_trajectory(mpc.get_trajectory(), mpc.get_trajectory().get_arclen() + 2)
         len_start = trajectory.get_closest_s(state[:2])
         adjusted_traj = trajectory.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"]))
         traj_view = adjusted_traj.view()
         xs = traj_view.xs
         ys = traj_view.ys
-        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": mpc.get_params()["CLF_W_LAG"], "i7": mpc.get_params()["CLF_W_CONTOUR"], "i8": mpc.get_params()["CLF_GAMMA"]}
+        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": mpc.get_params()["CLF_W_LAG"], "i7": mpc.get_params()["CLF_W_CONTOUR"], "i8": mpc.get_params()["CLF_GAMMA"], "i9": traj_view.arclen}
 
         pts = np.zeros((30, 2))
         count = 0
-        for i in np.linspace(0, mpc.get_params()["REF_LENGTH"], 30):
+        for i in np.linspace(0, adjusted_traj.get_arclen(), 30):
             state[4] = i
             pts[count,:] = [mpc.debug_fns["xr"](**args), mpc.debug_fns["yr"](**args)]
             count += 1
@@ -333,8 +364,8 @@ class BarnPlotter:
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
 
         x,y = robot_state[:2]
-        half_sz = 2
-        # half_sz = 4
+        # half_sz = 2
+        half_sz = 4
         self.ax.set_xlim(x-half_sz, x+half_sz)
         self.ax.set_ylim(y-half_sz, y+half_sz)
 
@@ -385,7 +416,9 @@ class BarnPlotter:
 
         state = mpc.get_state_from_horizon(0)
         u = mpc.get_input_from_horizon(0)
+
         trajectory = mpc.get_trajectory()
+        # trajectory = extend_trajectory(mpc.get_trajectory(), mpc.get_trajectory().get_arclen() + 2)
         len_start = trajectory.get_closest_s(state[:2])
         adjusted_traj = trajectory.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"])).view()
         xs, ys = adjusted_traj.xs, adjusted_traj.ys
@@ -396,7 +429,7 @@ class BarnPlotter:
         Q_c = mpc.get_params()["CLF_W_CONTOUR"]
         gamma = mpc.get_params()["CLF_GAMMA"]
 
-        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": Q_l, "i7": Q_c, "i8": gamma}
+        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": Q_l, "i7": Q_c, "i8": gamma, "i9": trajectory.get_arclen()}
         cbf_abv = mpc.debug_fns["h_abv"](**args)
         cbf_blw = mpc.debug_fns["h_blw"](**args)
 
