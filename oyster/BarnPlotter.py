@@ -248,9 +248,10 @@ class BarnPlotter:
         state = mpc.get_state_from_horizon(0)
         args = {"i0": state, "i1": mpc.get_input_from_horizon(0), "i2": xs, "i3": ys, "i4": upper_coeffs, "i5": lower_coeffs, "i6": mpc.get_params()["CLF_W_LAG"], "i7": mpc.get_params()["CLF_W_CONTOUR"], "i8": mpc.get_params()["CLF_GAMMA"], "i9": traj_view.arclen}
 
-        horizon = mpc.get_params()["REF_LENGTH"]
-        if len_start + horizon > trajectory.get_arclen():
-            horizon = trajectory.get_arclen() - len_start
+        # horizon = mpc.get_params()["REF_LENGTH"]
+        # if len_start + horizon > trajectory.get_arclen():
+        #     horizon = trajectory.get_arclen() - len_start
+        horizon = adjusted_traj.get_arclen()
 
         tau = np.linspace(0, horizon, 100)
         upper_d = np.zeros((100,))
