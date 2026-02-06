@@ -50,9 +50,9 @@ def load_casadi_functions(mpc_type):
         "lyap_const",
     ]
 
-    so_file = "mpcc_casadi_double_integrator_internals.so"
+    so_file = "libcasadi_double_integrator_mpcc_internals.so"
     if mpc_type == Dynamics.UNICYCLE:
-        so_file = "mpcc_casadi_unicycle_internals.so"
+        so_file = "libcasadi_unicycle_model_mpcc_internals.so"
 
     so_path = os.path.join(CASADI_LIB_DIR, so_file)
     print("SO_PATH", so_path)
@@ -108,6 +108,7 @@ class RobotMPC:
         config.origin = occupancy_grid.info.origin.position[:2]
         config.occupied_values = np.array([253, 254])
         config.no_information_values = np.array([255])
+        print(np.array(occupancy_grid.data).shape)
         self.mpc.set_map(config, np.array(occupancy_grid.data))
         # self.map_util = OccupancyGrid(config, np.array(occupancy_grid.data))
         # self.map_util = OccupancyGrid(occupancy_grid.info.width, occupancy_grid.info.height, occupancy_grid.info.resolution, float(occupancy_grid.info.origin.position[0]), float(occupancy_grid.info.origin.position[1]), np.array(occupancy_grid.data), np.array([253, 254]), np.array([255]))
@@ -148,6 +149,9 @@ class RobotMPC:
 
     def get_trajectory(self):
         return self.mpc.get_trajectory()
+
+    def get_non_extended_trajectory(self):
+        return self.mpc.get_non_extended_trajectory()
 
     def apply_control(self, u):
 

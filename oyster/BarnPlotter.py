@@ -127,11 +127,11 @@ class BarnPlotter:
 
         (self.ref_point,) = self.ax.plot([], [], "ro", label="reference")
 
-        (self.path_line,) = self.ax.plot([], [], "b-", linewidth=1.5)
+        (self.path_line,) = self.ax.plot([], [], "k-", linewidth=1.5, alpha=0.5)
 
-        (self.mpc_horizon,) = self.ax.plot([], [], "g", linewidth=3.0)
+        (self.mpc_horizon,) = self.ax.plot([], [], "g", linewidth=3.0, alpha=0.5)
 
-        (self.mpc_trajectory_belief,) = self.ax.plot([], [], "r-", linewidth=1.5)
+        (self.mpc_trajectory_belief,) = self.ax.plot([], [], "r-", linewidth=1.5, alpha=0.5)
 
         self.init_grid(occ_grid)
 
@@ -214,10 +214,10 @@ class BarnPlotter:
 
         # tubes (initialized as empty lines)
         (self.upper_tube_line,) = ax.plot(
-            [], [], "r-", label="upper tube", linewidth=2.5
+            [], [], "r-", label="upper tube", linewidth=2.5, alpha=0.5
         )
         (self.lower_tube_line,) = ax.plot(
-            [], [], "b-", label="lower tube", linewidth=2.5
+            [], [], "b-", label="lower tube", linewidth=2.5, alpha=0.5
         )
 
         (self.upper_tube_belief,) = ax.plot(
@@ -251,7 +251,14 @@ class BarnPlotter:
         # horizon = mpc.get_params()["REF_LENGTH"]
         # if len_start + horizon > trajectory.get_arclen():
         #     horizon = trajectory.get_arclen() - len_start
-        horizon = adjusted_traj.get_arclen()
+        extended_len = adjusted_traj.get_arclen()
+
+        trajectory = mpc.get_non_extended_trajectory()
+        adjusted_len_start = min(len_start, trajectory.get_arclen())
+        non_ex_adj = trajectory.get_adjusted_traj(adjusted_len_start, int(mpc.get_params()["REF_SAMPLES"]))
+        # horizon = non_ex_adj.get_arclen()
+        horizon = extended_len
+
 
         tau = np.linspace(0, horizon, 100)
         upper_d = np.zeros((100,))
@@ -262,15 +269,15 @@ class BarnPlotter:
             upper_d[i] = mpc.debug_fns["d_abv"](**args)
             lower_d[i] = mpc.debug_fns["d_blw"](**args)
 
-        upper_d_actual = np.polyval(upper_coeffs[::-1], tau / horizon)
-        lower_d_actual = np.polyval(lower_coeffs[::-1], tau / horizon)
+        upper_d_actual = np.polyval(upper_coeffs[::-1], tau / extended_len)
+        lower_d_actual = np.polyval(lower_coeffs[::-1], tau / extended_len)
 
-        ss = np.linspace(len_start, len_start + horizon, 100)
+        ss = np.linspace(0, horizon, 100)
         # traj = np.vstack([curve.trajx(ss), curve.trajy(ss)]).T
-        traj = np.vstack([trajectory(s) for s in ss])
+        traj = np.vstack([adjusted_traj(s) for s in ss])
 
         # tangents = np.column_stack([curve.trajx_d(ss), curve.trajy_d(ss)])
-        tangents = np.vstack([trajectory(s, 1) for s in ss])
+        tangents = np.vstack([adjusted_traj(s, 1) for s in ss])
         tangents /= np.linalg.norm(tangents, axis=1, keepdims=True)
 
         # compute normals
@@ -305,7 +312,6 @@ class BarnPlotter:
         # self.upper_tube_pts.set_data(upper_pts[:, 0], upper_pts[:, 1])
         # self.lower_tube_pts.set_data(lower_pts[:, 0], lower_pts[:, 1])
 
-
     def plot_vector(self, start, vec):
         end = np.array(start) + np.array(vec)
         print(start)
@@ -332,7 +338,6 @@ class BarnPlotter:
             #     exit(0)
             self.path_line.set_data(path[:, 0], path[:, 1])
 
-        self.traj_line.set_data(curve.xs, curve.ys)
 
         horizon = mpc.get_horizon()
         horiz_len = horizon.length
@@ -360,7 +365,19 @@ class BarnPlotter:
             pts[count,:] = [mpc.debug_fns["xr"](**args), mpc.debug_fns["yr"](**args)]
             count += 1
 
-        # self.mpc_trajectory_belief.set_data(pts[:,0], pts[:,1])
+        # non_extended_traj = mpc.get_non_extended_trajectory()
+        # non_ex_adj = non_extended_traj.get_adjusted_traj(len_start, int(mpc.get_params()["REF_SAMPLES"]))
+        # print("true ARCLEN:", non_ex_adj.get_arclen())
+        tau = np.linspace(0, adjusted_traj.get_arclen(), 30)
+        xs = [adjusted_traj(s)[0] for s in tau]
+        ys = [adjusted_traj(s)[1] for s in tau]
+        self.traj_line.set_data(xs, ys)
+
+        non_extended_traj = mpc.get_non_extended_trajectory()
+        tau = np.linspace(0, non_extended_traj.get_arclen(), 30)
+        xs = [non_extended_traj(s)[0] for s in tau]
+        ys = [non_extended_traj(s)[1] for s in tau]
+        self.mpc_trajectory_belief.set_data(xs, ys)
 
         self.plot_tubes(curve, robot_state, mpc, upper_coeffs, lower_coeffs)
 

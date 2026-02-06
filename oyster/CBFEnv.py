@@ -82,7 +82,7 @@ class CBFEnv(gym.Env):
         self.step_count = 0
 
         self.total_reward = 0
-        self.is_success = False
+        self.traj_planner_success = False
 
         self.planner_params = PlannerParams()
         self.planner_params.SOLVER = "faster"
@@ -258,6 +258,8 @@ class CBFEnv(gym.Env):
         self.params = self.mpc.get_params()
 
         len_start = trajectory.get_closest_s(self.robot_state[:2])
+        print("len start: ", len_start)
+        print("knots[-1]: ", self.knots[-1])
         # self.get_and_set_tubes(len_start)
 
         action = np.array(action)
@@ -322,7 +324,7 @@ class CBFEnv(gym.Env):
     def reset(self):
         self.did_collide = False
         self.total_reward = 0
-        self.is_success = False
+        self.traj_planner_success = False
         self.step_count = 0
 
         if self.plotter:
@@ -358,8 +360,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # params["USE_CBF"] = False
-        params["CBF_ALPHA_ABV"] = 8.0
-        params["CBF_ALPHA_BLW"] = 8.0
+        params["CBF_ALPHA_ABV"] = 5.0
+        params["CBF_ALPHA_BLW"] = 5.0
 
         self.set_mpc(params)
         print("params:", params)
@@ -498,7 +500,7 @@ class CBFEnv(gym.Env):
 
         args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"], "i9": adjusted_traj.get_arclen()}
 
-        print("ADJUSTED LENGTH: ", adjusted_traj.get_arclen())
+        # print("ADJUSTED LENGTH: ", adjusted_traj.get_arclen())
         # print("state:", state)
         # signed_d = self.mpc.debug_fns["signed_d"](**args)
         # print("signed_d", signed_d)
@@ -521,6 +523,14 @@ class CBFEnv(gym.Env):
         # print("const_abv", self.mpc.debug_fns["Lfh_abv"](**args) + self.mpc.debug_fns["Lghu_abv"](**args) + self.params["CBF_ALPHA_ABV"]* self.mpc.debug_fns["h_abv"](**args))
         # print("const_blw", self.mpc.debug_fns["Lfh_blw"](**args) + self.mpc.debug_fns["Lghu_blw"](**args) + self.params["CBF_ALPHA_BLW"] * self.mpc.debug_fns["h_blw"](**args))
 
+        lfv = self.mpc.debug_fns["Lfv"](**args) 
+        lgv = self.mpc.debug_fns["Lgv"](**args)
+        lgvu = self.mpc.debug_fns["Lgvu"](**args)
+        lyap_con = self.mpc.debug_fns["lyap_const"](**args) 
+        print("vdot: ", lfv + lgvu)
+        print("lgv:", lgv)
+        print("lgvu:", lgvu)
+        print("lyap_cons", lyap_con)
         return obs
 
     def set_epoch(self, epoch):
@@ -665,7 +675,7 @@ class CBFEnv(gym.Env):
                 print("failed to find initial trajectory")
                 exit(-1)
 
-        elif self.step_count % 5 == 0:
+        elif self.step_count % 5 == 0 or not self.traj_planner_success:
             # horizon = self.mpc.get_horizon()
 
             init_state = self.mpc.get_state_from_horizon(2)
@@ -694,6 +704,9 @@ class CBFEnv(gym.Env):
                 self.knots,
             )
             print('done')
+
+        if status is not None:
+            self.traj_planner_success = True if status == PlannerStatus.SUCCESS else False
 
     def _plan(self, start, goal):
 
