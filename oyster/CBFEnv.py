@@ -293,8 +293,8 @@ class CBFEnv(gym.Env):
         self.params["CBF_ALPHA_ABV"] = alpha_abv
         self.params["CBF_ALPHA_BLW"] = alpha_blw
 
-        # if self.params["USE_CBF"]:
-        #     self.mpc.load_params(self.params)
+        if self.params["USE_CBF"]:
+            self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
@@ -386,8 +386,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # params["USE_CBF"] = False
-        params["CBF_ALPHA_ABV"] = 5.0
-        params["CBF_ALPHA_BLW"] = 5.0
+        # params["CBF_ALPHA_ABV"] = 5.0
+        # params["CBF_ALPHA_BLW"] = 5.0
 
         self.set_mpc(params)
         print("params:", params)
@@ -580,14 +580,14 @@ class CBFEnv(gym.Env):
         # print("const_abv", self.mpc.debug_fns["Lfh_abv"](**args) + self.mpc.debug_fns["Lghu_abv"](**args) + self.params["CBF_ALPHA_ABV"]* self.mpc.debug_fns["h_abv"](**args))
         # print("const_blw", self.mpc.debug_fns["Lfh_blw"](**args) + self.mpc.debug_fns["Lghu_blw"](**args) + self.params["CBF_ALPHA_BLW"] * self.mpc.debug_fns["h_blw"](**args))
 
-        lfv = self.mpc.debug_fns["Lfv"](**args)
-        lgv = self.mpc.debug_fns["Lgv"](**args)
-        lgvu = self.mpc.debug_fns["Lgvu"](**args)
-        lyap_con = self.mpc.debug_fns["lyap_const"](**args)
-        print("vdot: ", lfv + lgvu)
-        print("lgv:", lgv)
-        print("lgvu:", lgvu)
-        print("lyap_cons", lyap_con)
+        # lfv = self.mpc.debug_fns["Lfv"](**args) 
+        # lgv = self.mpc.debug_fns["Lgv"](**args)
+        # lgvu = self.mpc.debug_fns["Lgvu"](**args)
+        # lyap_con = self.mpc.debug_fns["lyap_const"](**args) 
+        # print("vdot: ", lfv + lgvu)
+        # print("lgv:", lgv)
+        # print("lgvu:", lgvu)
+        # print("lyap_cons", lyap_con)
         return obs
 
     def set_epoch(self, epoch):
@@ -670,24 +670,28 @@ class CBFEnv(gym.Env):
             constraints.append(const_abv)
             constraints.append(const_blw)
 
-        rho = 10
+        rho = 100
         cons = np.array(constraints)
 
         c_min = np.min(cons)
         exp_cons = np.exp(-rho * (cons - c_min))
         worst_const = c_min - (1 / rho) * np.log(np.mean(np.sum(exp_cons)))
 
+        # print(constraints)
+        # print(c_min)
+        # print("worst_constraint:", worst_const)
+
         # reward model for having large constraint values
         # worst_const = min(min_const_abv, min_const_blw)
         a = 7.0
         reward += (np.log(2.0) - np.log1p(np.exp(-a * worst_const))) / a
-        reward = np.clip(reward, -5 * np.log(2.0) / a, np.log(2.0) / a)
-        print("worst_constraint:", worst_const)
+        reward = np.clip(reward, -5 * np.log(2.0)/a, np.log(2.0)/a)
         print("CONSTRAINT_REWARD", reward)
 
         avg = (params["MIN_ALPHA"] + params["MAX_ALPHA"]) / 2
         alphas = (obs[-2:] - avg) / avg
-        d = np.minimum(alphas - (-1.0), 1.0 - alphas)
+        d = np.minimum(alphas - (-1.), 1. - alphas)
+        # print(alphas,d)
 
         # penalize alpha being too large
         # penalize alpha leaving prescribed bounds
@@ -695,9 +699,10 @@ class CBFEnv(gym.Env):
         # alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
 
         # print("largeness:", alpha_reward)
-        alpha_reward -= (1.0 / 3) * np.sum((d[d < 0]) ** 2)
+        # alpha_reward -= (1./2) * np.sum((d[d < 0])**2)
+        alpha_reward -= np.sum((d[d<0])**2)
 
-        # print("ALPHA_REWARD:", alpha_reward)
+        print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
@@ -708,7 +713,7 @@ class CBFEnv(gym.Env):
             # print("total reward before collision:", self.total_reward)
             reward = -5.0
 
-        # print("REWARD", reward)
+        print("REWARD", reward)
 
         return reward
 
