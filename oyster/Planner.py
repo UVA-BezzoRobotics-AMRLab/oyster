@@ -7,9 +7,10 @@ from py_planner import vec_Vec2d, vec_MatX4d
 from py_planner import PlannerStatus
 from py_planner import PlannerParams
 from py_planner import OccupancyGrid
-from MapLoader import parse_xml_file, generate_map_from_cylinders
+from oyster.MapLoader import parse_xml_file, generate_map_from_cylinders
 
 from scipy.interpolate import UnivariateSpline
+
 
 class PyPlanner:
 
@@ -41,7 +42,7 @@ class PyPlanner:
             self.curr_horizon = self.max_horizon
             self.has_trajectory = True
         else:
-            self.curr_horizon /= .9
+            self.curr_horizon /= 0.9
 
         return status
 
@@ -65,12 +66,15 @@ class PyPlanner:
 
         return knots, xs, ys
 
+
 def plot_jps(jps):
-    plt.plot(jps[:,0], jps[:,1])
+    plt.plot(jps[:, 0], jps[:, 1])
+
 
 def plot_traj(traj):
     ps = np.array([[x.pos[0], x.pos[1]] for x in traj])
-    plt.plot(ps[:,0], ps[:,1])
+    plt.plot(ps[:, 0], ps[:, 1])
+
 
 if __name__ == "__main__":
 
@@ -100,18 +104,29 @@ if __name__ == "__main__":
 
     planner.set_params(params)
 
-    obstacles = parse_xml_file("/Users/nickmohammad/Programs/BARN_dataset/world_files/world_5.world")
+    obstacles = parse_xml_file(
+        "/Users/nickmohammad/Programs/BARN_dataset/world_files/world_5.world"
+    )
     occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
 
-    map_util = OccupancyGrid(occupancy_grid.info.width, occupancy_grid.info.height, occupancy_grid.info.resolution, float(occupancy_grid.info.origin.position[0]), float(occupancy_grid.info.origin.position[1]), np.array(occupancy_grid.data), np.array([253, 254]), np.array([255]))
+    map_util = OccupancyGrid(
+        occupancy_grid.info.width,
+        occupancy_grid.info.height,
+        occupancy_grid.info.resolution,
+        float(occupancy_grid.info.origin.position[0]),
+        float(occupancy_grid.info.origin.position[1]),
+        np.array(occupancy_grid.data),
+        np.array([253, 254]),
+        np.array([255]),
+    )
 
     planner.set_costmap(map_util)
 
-    start = np.zeros((3,4))
+    start = np.zeros((3, 4))
     start[:, 0] = np.array([-2.25, -2.5, 0])
     planner.set_start(start)
 
-    goal = np.zeros((3,4))
+    goal = np.zeros((3, 4))
     goal[:, 0] = np.array([-2.1, 2.25, 0])
     planner.set_goal(goal)
 
@@ -126,4 +141,3 @@ if __name__ == "__main__":
     plot_jps(jpsPath)
     plot_traj(traj)
     plt.show()
-

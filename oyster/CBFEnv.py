@@ -15,7 +15,7 @@ from oyster.Tubes import TubeGenerator
 from oyster.TrajLibGen import TrajLibLoader
 from oyster.ParamLoader import ParameterLoader
 from oyster.RobotMPC import RobotMPC, Dynamics
-from MapLoader import parse_xml_file, generate_map_from_cylinders
+from oyster.MapLoader import parse_xml_file, generate_map_from_cylinders
 
 from py_planner import Planner
 from py_planner import RFNState
@@ -26,6 +26,7 @@ from py_planner import OccupancyGrid
 
 from py_mpcc import Polynomial
 from py_mpcc import extend_trajectory
+
 
 class RLObs(IntEnum):
     CBF_ABV = 0
@@ -44,11 +45,11 @@ class CBFEnv(gym.Env):
     def __init__(
         self,
         world_num=[0],
-        N = 3,
+        N=3,
         manual_step=False,
         normalize_obs=True,
         save_video=False,
-        max_step_count=250
+        max_step_count=250,
     ):
 
         super(CBFEnv, self).__init__()
@@ -152,7 +153,10 @@ class CBFEnv(gym.Env):
             for i, world in enumerate(world_num):
                 print(i)
                 path = os.path.join(
-                        os.getenv("BARN_DATASET_PATH"), "world_files", f"world_{world}.world")
+                    os.getenv("BARN_DATASET_PATH"),
+                    "world_files",
+                    f"world_{world}.world",
+                )
                 obs = parse_xml_file(path, offsets[i])
                 if len(obstacles) == 0:
                     obstacles = obs
@@ -161,8 +165,10 @@ class CBFEnv(gym.Env):
 
         except Exception as e:
             obstacles = None
-            print("[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
-                  "environment variable been set to it's top level directory location?")
+            print(
+                "[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
+                "environment variable been set to it's top level directory location?",
+            )
             print(str(e))
             exit(0)
 
@@ -178,13 +184,56 @@ class CBFEnv(gym.Env):
             np.array([255]),
         )
 
+    @staticmethod
+    def get_mu_and_std(N_horizon, N_alpha, params):
+        # These values were computed empirically over 100k samples
+        obs_mu_single = np.zeros(len(RLObs))
+        obs_mu_single[RLObs.CBF_ABV] = 0.2953
+        obs_mu_single[RLObs.LFH_LGH_ABV] = -0.0163
+        obs_mu_single[RLObs.CBF_BLW] = 0.3125
+        obs_mu_single[RLObs.LFH_LGH_BLW] = -0.0195
+        # obs_mu[RLObs.CBF_ABV] = 0.423
+        # obs_mu[RLObs.LFH_LGH_ABV] = 1.0155
+        # obs_mu[RLObs.CBF_BLW] = 0.1753
+        # obs_mu[RLObs.LFH_LGH_BLW] = -0.17
+
+        obs_std_single = np.zeros(len(RLObs))
+        obs_std_single[RLObs.CBF_ABV] = 0.1011
+        obs_std_single[RLObs.LFH_LGH_ABV] = 0.1497
+        obs_std_single[RLObs.CBF_BLW] = 0.105
+        obs_std_single[RLObs.LFH_LGH_BLW] = 0.1687
+        # obs_std[RLObs.CBF_ABV] = 0.2371
+        # obs_std[RLObs.LFH_LGH_ABV] = 1.1442
+        # obs_std[RLObs.CBF_BLW] = 0.1505
+        # obs_std[RLObs.LFH_LGH_BLW] = 0.2709
+
+        obs_mu = np.zeros(obs_mu_single.shape[0] * N_horizon + N_alpha)
+        obs_std = np.zeros(obs_std_single.shape[0] * N_horizon + N_alpha)
+
+        obs_mu[:-N_alpha] = np.tile(obs_mu_single, N_horizon)
+        obs_std[:-N_alpha] = np.tile(obs_std_single, N_horizon)
+
+        for i in range(N_alpha):
+            obs_mu[len(RLObs) * N_horizon + i] = (
+                params["MIN_ALPHA"] + params["MAX_ALPHA"]
+            ) / 2
+
+        for i in range(N_alpha):
+            obs_std[len(RLObs) * N_horizon + i] = (
+                params["MIN_ALPHA"] + params["MAX_ALPHA"]
+            ) / 4
+
+        return obs_mu, obs_std
+
     def set_mpc(self, params):
 
         self.params = copy.deepcopy(params)
         self.dynamic_model = self.params["DYNAMIC_MODEL"]
         # self.params["USE_CBF"] = True
 
-        init_theta = np.atan2(self._goal[1, 0] - self._start[1, 0], self._goal[0, 0] - self._start[0, 0])
+        init_theta = np.atan2(
+            self._goal[1, 0] - self._start[1, 0], self._goal[0, 0] - self._start[0, 0]
+        )
 
         init_pose = np.concatenate((self._start[:2, 0], [init_theta]))
         self.mpc = RobotMPC(init_pose, self.params)
@@ -200,39 +249,9 @@ class CBFEnv(gym.Env):
             self.upper_coeffs[0] = 100
             self.lower_coeffs[0] = -100
 
-        # These values were computed empirically over 100k samples
-        obs_mu = np.zeros(len(RLObs))
-        obs_mu[RLObs.CBF_ABV] = 0.2953
-        obs_mu[RLObs.LFH_LGH_ABV] = -0.0163
-        obs_mu[RLObs.CBF_BLW] = 0.3125
-        obs_mu[RLObs.LFH_LGH_BLW] = -0.0195
-        # obs_mu[RLObs.CBF_ABV] = 0.423
-        # obs_mu[RLObs.LFH_LGH_ABV] = 1.0155
-        # obs_mu[RLObs.CBF_BLW] = 0.1753
-        # obs_mu[RLObs.LFH_LGH_BLW] = -0.17
-
-        obs_std = np.zeros(len(RLObs))
-        obs_std[RLObs.CBF_ABV] = 0.1011
-        obs_std[RLObs.LFH_LGH_ABV] = 0.1497
-        obs_std[RLObs.CBF_BLW] = 0.105
-        obs_std[RLObs.LFH_LGH_BLW] = 0.1687
-        # obs_std[RLObs.CBF_ABV] = 0.2371
-        # obs_std[RLObs.LFH_LGH_ABV] = 1.1442
-        # obs_std[RLObs.CBF_BLW] = 0.1505
-        # obs_std[RLObs.LFH_LGH_BLW] = 0.2709
-
-        self.obs_mu = np.zeros(obs_mu.shape[0] * self.N_horizon + self.N_alpha)
-        self.obs_std = np.zeros(obs_std.shape[0] * self.N_horizon + self.N_alpha)
-
-        self.obs_mu[:-self.N_alpha] = np.tile(obs_mu, self.N_horizon)
-        self.obs_std[:-self.N_alpha] = np.tile(obs_std, self.N_horizon)
-
-        for i in range(self.N_alpha):
-            self.obs_mu[len(RLObs) * self.N_horizon + i] = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"])/2
-
-        for i in range(self.N_alpha):
-            self.obs_std[len(RLObs) * self.N_horizon + i] = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"])/4
-
+        self.obs_mu, self.obs_std = CBFEnv.get_mu_and_std(
+            self.N_horizon, self.N_alpha, self.params
+        )
 
     def load_tasks(self):
         param_path = os.path.join(os.path.dirname(__file__), "configs")
@@ -245,7 +264,7 @@ class CBFEnv(gym.Env):
 
     def normalize_obs(self, obs):
         # 95% of observed data will be within -1 to 1
-        z = (obs - self.obs_mu) / (2*self.obs_std)
+        z = (obs - self.obs_mu) / (2 * self.obs_std)
         z = np.clip(z, self.low, self.high)
         return z
 
@@ -296,12 +315,20 @@ class CBFEnv(gym.Env):
 
         v_max = self.params["LINVEL"]
 
-        is_colliding = self.map_util.is_occupied(self.robot_state[0], self.robot_state[1], "inflated")
+        is_colliding = self.map_util.is_occupied(
+            self.robot_state[0], self.robot_state[1], "inflated"
+        )
+
+        self.did_collide = is_colliding
 
         # ---------------- reward ----------------
-        reward = self.get_reward(obs, is_colliding)
+        reward = CBFEnv.get_reward(obs, is_colliding, self.params, self.N_horizon)
 
-        is_done = self.step_count >= self.max_step_count or (len_start >= self.knots[-1] - .2) or is_colliding
+        is_done = (
+            self.step_count >= self.max_step_count
+            or (len_start >= self.knots[-1] - 0.2)
+            or is_colliding
+        )
 
         self.total_reward += reward
         # print("step reward:", reward)
@@ -312,7 +339,6 @@ class CBFEnv(gym.Env):
             if self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
                 vel = np.linalg.norm(self.robot_state[2:4])
             self.plotter.log_reward(vel)
-
 
         return (
             self.normalize_obs(obs) if self.should_normalize else obs,
@@ -347,7 +373,7 @@ class CBFEnv(gym.Env):
             params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
             params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
 
-            # randomly swap the two goals... 
+            # randomly swap the two goals...
             r = np.random.randint(2)
             if r == 1:
                 tmp = self._goal
@@ -373,15 +399,19 @@ class CBFEnv(gym.Env):
         # self.mpc.set_mpc_state(self.robot_state)
 
         obs = np.zeros(self.state_dim, dtype=np.float64)
-        obs[-self.N_alpha:] = [params["CBF_ALPHA_ABV"], params["CBF_ALPHA_BLW"]]
+        obs[-self.N_alpha :] = [params["CBF_ALPHA_ABV"], params["CBF_ALPHA_BLW"]]
         return self.normalize_obs(obs) if self.should_normalize else obs
 
     def get_obs(self):
         horizon = self.mpc.get_horizon()
         horizon_len = horizon.length
         if horizon_len < self.N_horizon:
-            raise ValueError("Horizon shape", horizon.shape[0], "is smaller than N_horizon set", 
-                             self.N_horizon)
+            raise ValueError(
+                "Horizon shape",
+                horizon.shape[0],
+                "is smaller than N_horizon set",
+                self.N_horizon,
+            )
 
         trajectory = self.mpc.get_trajectory()
         # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_params()["REF_LENGTH"])
@@ -389,23 +419,35 @@ class CBFEnv(gym.Env):
 
         state = self.mpc.get_state_from_horizon(1)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
-        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
+        adjusted_traj = trajectory.get_adjusted_traj(
+            len_start, int(self.mpc.get_params()["REF_SAMPLES"])
+        )
         xs = adjusted_traj.get_ctrls_x()
         ys = adjusted_traj.get_ctrls_y()
 
-
         # go to length-2 because N-1 inputs in horizon of size N
-        inds = np.linspace(1, horizon_len-2, self.N_horizon, dtype=int)
+        inds = np.linspace(1, horizon_len - 2, self.N_horizon, dtype=int)
         obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
         for i in range(self.N_horizon):
             state = self.mpc.get_state_from_horizon(inds[i])
             # some numerical issue is causing s state to be -1e-<large num> for some reason
-            # Casadi doesnt like that so enforcing a strict positive minimum. 
+            # Casadi doesnt like that so enforcing a strict positive minimum.
             state[-2] = max(state[-2], 1e-6)
             u = self.mpc.get_input_from_horizon(inds[i])
             acc = u[:2]
 
-            args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"], "i9": adjusted_traj.get_arclen()}
+            args = {
+                "i0": state,
+                "i1": u,
+                "i2": xs,
+                "i3": ys,
+                "i4": self.upper_coeffs,
+                "i5": self.lower_coeffs,
+                "i6": self.params["CLF_W_LAG"],
+                "i7": self.params["CLF_W_CONTOUR"],
+                "i8": self.params["CLF_GAMMA"],
+                "i9": adjusted_traj.get_arclen(),
+            }
 
             # cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
             # lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
@@ -429,7 +471,6 @@ class CBFEnv(gym.Env):
             obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
             obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
             obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
-
 
             if np.any(np.isnan(obs)):
                 # # args = {"i0": state, "i1": xs}
@@ -473,7 +514,10 @@ class CBFEnv(gym.Env):
                 # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
                 # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
 
-        obs[-self.N_alpha:] = [self.params["CBF_ALPHA_ABV"], self.params["CBF_ALPHA_BLW"]]
+        obs[-self.N_alpha :] = [
+            self.params["CBF_ALPHA_ABV"],
+            self.params["CBF_ALPHA_BLW"],
+        ]
         # p_blw = self.mpc.debug_fns["p_blw"](**args)
         # d_blw = self.mpc.debug_fns["d_blw"](**args)
         # h_blw = self.mpc.debug_fns["h_blw"](**args)
@@ -494,11 +538,24 @@ class CBFEnv(gym.Env):
 
         state = self.mpc.get_state_from_horizon(0)
         len_start = trajectory.get_closest_s(state[:2])
-        adjusted_traj = trajectory.get_adjusted_traj(len_start, int(self.mpc.get_params()["REF_SAMPLES"]))
+        adjusted_traj = trajectory.get_adjusted_traj(
+            len_start, int(self.mpc.get_params()["REF_SAMPLES"])
+        )
         xs = adjusted_traj.get_ctrls_x()
         ys = adjusted_traj.get_ctrls_y()
 
-        args = {"i0": state, "i1": u, "i2": xs, "i3": ys, "i4": self.upper_coeffs, "i5": self.lower_coeffs, "i6": self.params["CLF_W_LAG"], "i7": self.params["CLF_W_CONTOUR"], "i8": self.params["CLF_GAMMA"], "i9": adjusted_traj.get_arclen()}
+        args = {
+            "i0": state,
+            "i1": u,
+            "i2": xs,
+            "i3": ys,
+            "i4": self.upper_coeffs,
+            "i5": self.lower_coeffs,
+            "i6": self.params["CLF_W_LAG"],
+            "i7": self.params["CLF_W_CONTOUR"],
+            "i8": self.params["CLF_GAMMA"],
+            "i9": adjusted_traj.get_arclen(),
+        }
 
         # print("ADJUSTED LENGTH: ", adjusted_traj.get_arclen())
         # print("state:", state)
@@ -523,10 +580,10 @@ class CBFEnv(gym.Env):
         # print("const_abv", self.mpc.debug_fns["Lfh_abv"](**args) + self.mpc.debug_fns["Lghu_abv"](**args) + self.params["CBF_ALPHA_ABV"]* self.mpc.debug_fns["h_abv"](**args))
         # print("const_blw", self.mpc.debug_fns["Lfh_blw"](**args) + self.mpc.debug_fns["Lghu_blw"](**args) + self.params["CBF_ALPHA_BLW"] * self.mpc.debug_fns["h_blw"](**args))
 
-        lfv = self.mpc.debug_fns["Lfv"](**args) 
+        lfv = self.mpc.debug_fns["Lfv"](**args)
         lgv = self.mpc.debug_fns["Lgv"](**args)
         lgvu = self.mpc.debug_fns["Lgvu"](**args)
-        lyap_con = self.mpc.debug_fns["lyap_const"](**args) 
+        lyap_con = self.mpc.debug_fns["lyap_const"](**args)
         print("vdot: ", lfv + lgvu)
         print("lgv:", lgv)
         print("lgvu:", lgvu)
@@ -584,13 +641,14 @@ class CBFEnv(gym.Env):
         self.task_idx = idx
         self.reset()
 
-    def get_reward(self, obs, is_colliding):
+    @staticmethod
+    def get_reward(obs, is_colliding, params, N_horizon):
         reward = 0
 
         # min_const_abv = 1e6
         # min_const_blw = 1e6
         constraints = []
-        for i in range(self.N_horizon):
+        for i in range(N_horizon):
             cbf_abv = obs[i * len(RLObs) + RLObs.CBF_ABV]
             lfh_lghu_abv = obs[i * len(RLObs) + RLObs.LFH_LGH_ABV]
 
@@ -612,24 +670,24 @@ class CBFEnv(gym.Env):
             constraints.append(const_abv)
             constraints.append(const_blw)
 
-        rho = 10 
+        rho = 10
         cons = np.array(constraints)
 
         c_min = np.min(cons)
         exp_cons = np.exp(-rho * (cons - c_min))
-        worst_const = c_min - (1/ rho) * np.log(np.mean(np.sum(exp_cons)))
+        worst_const = c_min - (1 / rho) * np.log(np.mean(np.sum(exp_cons)))
 
         # reward model for having large constraint values
         # worst_const = min(min_const_abv, min_const_blw)
         a = 7.0
         reward += (np.log(2.0) - np.log1p(np.exp(-a * worst_const))) / a
-        reward = np.clip(reward, -5 * np.log(2.0)/a, np.log(2.0)/a)
+        reward = np.clip(reward, -5 * np.log(2.0) / a, np.log(2.0) / a)
         print("worst_constraint:", worst_const)
         print("CONSTRAINT_REWARD", reward)
 
-        avg = (self.params["MIN_ALPHA"] + self.params["MAX_ALPHA"]) / 2
-        alphas = (obs[-self.N_alpha:] - avg) / avg
-        d = np.minimum(alphas - (-1.), 1. - alphas)
+        avg = (params["MIN_ALPHA"] + params["MAX_ALPHA"]) / 2
+        alphas = (obs[-2:] - avg) / avg
+        d = np.minimum(alphas - (-1.0), 1.0 - alphas)
 
         # penalize alpha being too large
         # penalize alpha leaving prescribed bounds
@@ -637,24 +695,22 @@ class CBFEnv(gym.Env):
         # alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
 
         # print("largeness:", alpha_reward)
-        alpha_reward -= (1./3) * np.sum((d[d < 0])**2)
+        alpha_reward -= (1.0 / 3) * np.sum((d[d < 0]) ** 2)
 
         # print("ALPHA_REWARD:", alpha_reward)
 
         reward += alpha_reward
 
-        solver_status = self.mpc.get_solver_status()
-        reward += -.05 if not solver_status else 0.
+        # solver_status = self.mpc.get_solver_status()
+        # reward += -0.05 if not solver_status else 0.0
 
         if is_colliding:
-            self.did_collide = True
-            print("total reward before collision:", self.total_reward)
+            # print("total reward before collision:", self.total_reward)
             reward = -5.0
 
         # print("REWARD", reward)
 
         return reward
-
 
     def update_trajectory(self):
 
@@ -697,16 +753,18 @@ class CBFEnv(gym.Env):
 
         if status == PlannerStatus.SUCCESS:
             self.knots, self.xs, self.ys = self.planner.get_arclen_traj()
-            print('setting trajectory')
+            print("setting trajectory")
             self.mpc.set_trajectory(
                 self.xs,
                 self.ys,
                 self.knots,
             )
-            print('done')
+            print("done")
 
         if status is not None:
-            self.traj_planner_success = True if status == PlannerStatus.SUCCESS else False
+            self.traj_planner_success = (
+                True if status == PlannerStatus.SUCCESS else False
+            )
 
     def _plan(self, start, goal):
 
@@ -764,7 +822,7 @@ class RunningStats:
 def main(record_data, manual_step, task_num, world_sweep, world_num):
 
     if not record_data and not world_sweep:
-        env = CBFEnv(world_num = [world_num], manual_step=manual_step)
+        env = CBFEnv(world_num=[world_num], manual_step=manual_step)
         env.reset_task(task_num)
         done = False
         world_count = 0
@@ -784,9 +842,9 @@ def main(record_data, manual_step, task_num, world_sweep, world_num):
             writer = csv.writer(f)
 
             for i in range(0, 300):
-                # obvsiouly cant normalize if we are trying to collect 
+                # obvsiouly cant normalize if we are trying to collect
                 # distribution statistics
-                env = CBFEnv(world_num = [i], normalize_obs=False)
+                env = CBFEnv(world_num=[i], normalize_obs=False)
 
                 done = False
                 for j in range(6):
@@ -822,26 +880,26 @@ def main(record_data, manual_step, task_num, world_sweep, world_num):
         cbf_blw_std = [std for i, std in enumerate(stats.std) if i % 4 == 2]
         cbf_dot_blw_std = [std for i, std in enumerate(stats.std) if i % 4 == 3]
 
-        print("CBF_ABV_MEAN:",     np.average(cbf_abv_mu))
+        print("CBF_ABV_MEAN:", np.average(cbf_abv_mu))
         print("CBF_DOT_ABV_MEAN:", np.average(cbf_dot_abv_mu))
-        print("CBF_BLW_MEAN:",     np.average(cbf_blw_mu))
+        print("CBF_BLW_MEAN:", np.average(cbf_blw_mu))
         print("CBF_DOT_BLW_MEAN:", np.average(cbf_dot_blw_mu))
 
-        print("CBF_ABV_STD:",      np.average(cbf_abv_std))
-        print("CBF_DOT_ABV_STD:",  np.average(cbf_dot_abv_std))
-        print("CBF_BLW_STD:",      np.average(cbf_blw_std))
-        print("CBF_DOT_BLW_STD:",  np.average(cbf_dot_blw_std))
+        print("CBF_ABV_STD:", np.average(cbf_abv_std))
+        print("CBF_DOT_ABV_STD:", np.average(cbf_dot_abv_std))
+        print("CBF_BLW_STD:", np.average(cbf_blw_std))
+        print("CBF_DOT_BLW_STD:", np.average(cbf_dot_blw_std))
 
         print("Code -------------")
-        print("obs_mu[RLObs.CBF_ABV]",     np.round(np.average(cbf_abv_mu), 4))
+        print("obs_mu[RLObs.CBF_ABV]", np.round(np.average(cbf_abv_mu), 4))
         print("obs_mu[RLObs.LFH_LGH_ABV]", np.round(np.average(cbf_dot_abv_mu), 4))
-        print("obs_mu[RLObs.CBF_BLW]",     np.round(np.average(cbf_blw_mu), 4))
+        print("obs_mu[RLObs.CBF_BLW]", np.round(np.average(cbf_blw_mu), 4))
         print("obs_mu[RLObs.LFH_LGH_BLW]:", np.round(np.average(cbf_dot_blw_mu), 4))
 
-        print("obs_std[RLObs.CBF_ABV]",      np.round(np.average(cbf_abv_std), 4))
-        print("obs_std[RLObs.LFH_LGH_ABV]",  np.round(np.average(cbf_dot_abv_std), 4))
-        print("obs_std[RLObs.CBF_BLW]",      np.round(np.average(cbf_blw_std), 4))
-        print("obs_std[RLObs.LFH_LGH_BLW]",  np.round(np.average(cbf_dot_blw_std), 4))
+        print("obs_std[RLObs.CBF_ABV]", np.round(np.average(cbf_abv_std), 4))
+        print("obs_std[RLObs.LFH_LGH_ABV]", np.round(np.average(cbf_dot_abv_std), 4))
+        print("obs_std[RLObs.CBF_BLW]", np.round(np.average(cbf_blw_std), 4))
+        print("obs_std[RLObs.LFH_LGH_BLW]", np.round(np.average(cbf_dot_blw_std), 4))
 
         print("ROW_COUNT:", obs_count)
 
