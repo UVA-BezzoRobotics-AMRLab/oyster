@@ -1,18 +1,16 @@
 import os
 import csv
-import gym
+import gymnasium as gym
 import time
 import copy
 import click
 import numpy as np
 
 from enum import IntEnum, auto
-from gym import spaces
+from gymnasium import spaces
 from oyster.BarnPlotter import BarnPlotter
 from oyster.Planner import PyPlanner
 from oyster.Bezier import BezierCurve
-from oyster.Tubes import TubeGenerator
-from oyster.TrajLibGen import TrajLibLoader
 from oyster.ParamLoader import ParameterLoader
 from oyster.RobotMPC import RobotMPC, Dynamics
 from oyster.MapLoader import parse_xml_file, generate_map_from_cylinders
@@ -86,7 +84,8 @@ class CBFEnv(gym.Env):
         self.traj_planner_success = False
 
         self.planner_params = PlannerParams()
-        self.planner_params.SOLVER = "faster"
+        # self.planner_params.SOLVER = "faster"
+        self.planner_params.SOLVER = "gcopter"
         self.planner_params.W_MAX = 1.8
         self.planner_params.V_MAX = 50
         self.planner_params.A_MAX = 60
@@ -293,8 +292,8 @@ class CBFEnv(gym.Env):
         self.params["CBF_ALPHA_ABV"] = alpha_abv
         self.params["CBF_ALPHA_BLW"] = alpha_blw
 
-        if self.params["USE_CBF"]:
-            self.mpc.load_params(self.params)
+        # if self.params["USE_CBF"]:
+        #     self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
@@ -386,8 +385,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # params["USE_CBF"] = False
-        # params["CBF_ALPHA_ABV"] = 5.0
-        # params["CBF_ALPHA_BLW"] = 5.0
+        params["CBF_ALPHA_ABV"] = 2.0
+        params["CBF_ALPHA_BLW"] = 2.0
 
         self.set_mpc(params)
         print("params:", params)
@@ -475,7 +474,7 @@ class CBFEnv(gym.Env):
             if np.any(np.isnan(obs)):
                 # # args = {"i0": state, "i1": xs}
                 print(i, "state:", state)
-                signed_d = self.mpc.debug_fns["signed_d"](**args)
+                signed_d = self.mpc.debug_fns("signed_d",args)
                 print(i, "signed_d", signed_d)
                 print(i, "xr:", self.mpc.debug_fns["xr"](**args))
                 print(i, "yr:", self.mpc.debug_fns["yr"](**args))
@@ -748,7 +747,9 @@ class CBFEnv(gym.Env):
                 theta = init_state[2]
                 start[:2, 1] = init_state[3] * np.array([np.cos(theta), np.sin(theta)])
             elif self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
-                start[:2, 1] = np.array(init_state[4], init_state[3])
+                print("state is: ", init_state)
+                start[:2, 1] = np.array([init_state[2], init_state[3]])
+                print(start[:2, 1])
 
             self.planner.set_costmap(self.map_util)
             self.planner.set_start(start)

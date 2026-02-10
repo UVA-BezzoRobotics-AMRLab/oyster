@@ -25,6 +25,13 @@ def _unwrap(out):
         )
 
 def load_casadi_functions(mpc_type):
+
+    prefix = "double_integrator"
+    so_file = "libcasadi_double_integrator_mpcc_internals.so"
+    if mpc_type == Dynamics.UNICYCLE:
+        prefix = "unicycle_model"
+        so_file = "libcasadi_unicycle_model_mpcc_internals.so"
+
     fn_names = [
         "xr", 
         "yr",
@@ -50,15 +57,12 @@ def load_casadi_functions(mpc_type):
         "lyap_const",
     ]
 
-    so_file = "libcasadi_double_integrator_mpcc_internals.so"
-    if mpc_type == Dynamics.UNICYCLE:
-        so_file = "libcasadi_unicycle_model_mpcc_internals.so"
-
     so_path = os.path.join(CASADI_LIB_DIR, so_file)
     print("SO_PATH", so_path)
     fns = {}
     for name in fn_names:
-        f = external(name, so_path)
+        fn_name = f"{prefix}_{name}"
+        f = external(fn_name, so_path)
         # print(name, external(name, so_path).name_in())
         # fns[name] = (lambda **args: _unwrap(external(name, so_path)(**args)))
         fns[name] = (lambda f=f: (lambda **args: _unwrap(f(**args))))()
@@ -197,6 +201,7 @@ class RobotMPC:
         #     self.robot_state[3] = u_uni[0]
 
         return self.robot_state
+
 
     def get_len_start(self):
         return self.mpc.get_s_from_pose()
