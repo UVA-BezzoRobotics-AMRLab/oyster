@@ -32,8 +32,8 @@ clf_gamma: 0.5
 
 # CBF params
 use_cbf: true
-cbf_alpha_abv: 5
-cbf_alpha_blw: 5
+cbf_alpha_abv: 0.5
+cbf_alpha_blw: 0.5
 cbf_colinear: .05
 cbf_padding: .05
 

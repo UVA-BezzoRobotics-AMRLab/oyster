@@ -60,7 +60,7 @@ class CBFEnv(gym.Env):
         self.N_alpha = 2
         self.N_horizon = N
 
-        self.state_dim = len(RLObs) * self.N_horizon + self.N_alpha
+        self.state_dim = len(RLObs) * self.N_horizon + self.N_alpha + 1
         self.action_dim = 2
 
         # each task is loaded from parameter list
@@ -84,8 +84,8 @@ class CBFEnv(gym.Env):
         self.traj_planner_success = False
 
         self.planner_params = PlannerParams()
-        # self.planner_params.SOLVER = "faster"
-        self.planner_params.SOLVER = "gcopter"
+        self.planner_params.SOLVER = "faster"
+        # self.planner_params.SOLVER = "gcopter"
         self.planner_params.W_MAX = 1.8
         self.planner_params.V_MAX = 50
         self.planner_params.A_MAX = 60
@@ -191,34 +191,31 @@ class CBFEnv(gym.Env):
         obs_mu_single[RLObs.LFH_LGH_ABV] = -0.0163
         obs_mu_single[RLObs.CBF_BLW] = 0.3125
         obs_mu_single[RLObs.LFH_LGH_BLW] = -0.0195
-        # obs_mu[RLObs.CBF_ABV] = 0.423
-        # obs_mu[RLObs.LFH_LGH_ABV] = 1.0155
-        # obs_mu[RLObs.CBF_BLW] = 0.1753
-        # obs_mu[RLObs.LFH_LGH_BLW] = -0.17
+        # obs_mu_single[RLObs.S_DOT] = -0.0195
 
         obs_std_single = np.zeros(len(RLObs))
         obs_std_single[RLObs.CBF_ABV] = 0.1011
         obs_std_single[RLObs.LFH_LGH_ABV] = 0.1497
         obs_std_single[RLObs.CBF_BLW] = 0.105
         obs_std_single[RLObs.LFH_LGH_BLW] = 0.1687
-        # obs_std[RLObs.CBF_ABV] = 0.2371
-        # obs_std[RLObs.LFH_LGH_ABV] = 1.1442
-        # obs_std[RLObs.CBF_BLW] = 0.1505
-        # obs_std[RLObs.LFH_LGH_BLW] = 0.2709
+        # obs_std_single[RLObs.S_DOT] = 0.1687
 
-        obs_mu = np.zeros(obs_mu_single.shape[0] * N_horizon + N_alpha)
-        obs_std = np.zeros(obs_std_single.shape[0] * N_horizon + N_alpha)
+        obs_mu = np.zeros(obs_mu_single.shape[0] * N_horizon + N_alpha + 1)
+        obs_std = np.zeros(obs_std_single.shape[0] * N_horizon + N_alpha + 1)
 
-        obs_mu[:-N_alpha] = np.tile(obs_mu_single, N_horizon)
-        obs_std[:-N_alpha] = np.tile(obs_std_single, N_horizon)
+        obs_mu[:-N_alpha-1] = np.tile(obs_mu_single, N_horizon)
+        obs_std[:-N_alpha-1] = np.tile(obs_std_single, N_horizon)
+
+        obs_mu[len(RLObs) * N_horizon] = params["LINVEL"] / 2
+        obs_std[len(RLObs) * N_horizon] = params["LINVEL"] / 4
 
         for i in range(N_alpha):
-            obs_mu[len(RLObs) * N_horizon + i] = (
+            obs_mu[len(RLObs) * N_horizon + i + 1] = (
                 params["MIN_ALPHA"] + params["MAX_ALPHA"]
             ) / 2
 
         for i in range(N_alpha):
-            obs_std[len(RLObs) * N_horizon + i] = (
+            obs_std[len(RLObs) * N_horizon + i + 1] = (
                 params["MIN_ALPHA"] + params["MAX_ALPHA"]
             ) / 4
 
@@ -281,19 +278,21 @@ class CBFEnv(gym.Env):
         # self.get_and_set_tubes(len_start)
 
         action = np.array(action)
+        # print("normalized",action)
         action = action_unnormalize(
             action, self.params["MIN_ALPHA_DOT"], self.params["MAX_ALPHA_DOT"]
         )
+        # print(action)
 
         dt = self.params["DT"]
-        alpha_abv = self.params["CBF_ALPHA_ABV"] + action[0] * dt
-        alpha_blw = self.params["CBF_ALPHA_BLW"] + action[1] * dt
+        alpha_abv = self.params["CBF_ALPHA_ABV"] + action[0] # * dt
+        alpha_blw = self.params["CBF_ALPHA_BLW"] + action[1] # * dt
 
         self.params["CBF_ALPHA_ABV"] = alpha_abv
         self.params["CBF_ALPHA_BLW"] = alpha_blw
 
-        # if self.params["USE_CBF"]:
-        #     self.mpc.load_params(self.params)
+        if self.params["USE_CBF"]:
+            self.mpc.load_params(self.params)
 
         u = self.mpc.get_control(len_start)
         # print("ROBOT_STATE before:", self.robot_state)
@@ -309,29 +308,33 @@ class CBFEnv(gym.Env):
         self.current_ref = trajectory(len_start)
 
         obs = self.get_obs()
-        print("obs:", obs)
+        # print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
         v_max = self.params["LINVEL"]
 
-        is_colliding = self.map_util.is_occupied(
-            self.robot_state[0], self.robot_state[1], "inflated"
-        )
+        is_colliding = False
+        try:
+            is_colliding = self.map_util.is_occupied(
+                self.robot_state[0], self.robot_state[1], "inflated"
+            )
+        except:
+            print("Warning, robot position is outside map boundary...")
 
         self.did_collide = is_colliding
 
         # ---------------- reward ----------------
-        reward = CBFEnv.get_reward(obs, is_colliding, self.params, self.N_horizon)
+        reward = CBFEnv.get_reward(obs, is_colliding, self.params, self.N_horizon, action)
 
         is_done = (
             self.step_count >= self.max_step_count
             or (len_start >= self.knots[-1] - 0.2)
-            or is_colliding
+            or is_colliding or abs(self.robot_state[1] - self._goal[1,0]) < 1
         )
 
         self.total_reward += reward
         # print("step reward:", reward)
-        # print("total reward:", self.total_reward)
+        print("total reward:", self.total_reward)
         if self.plotter is not None:
             # self.plotter.log_reward(reward)
             vel = self.robot_state[3]
@@ -385,17 +388,18 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # params["USE_CBF"] = False
-        params["CBF_ALPHA_ABV"] = 2.0
-        params["CBF_ALPHA_BLW"] = 2.0
+        # params["CBF_ALPHA_ABV"] = 8.0
+        # params["CBF_ALPHA_BLW"] = 8.0
 
         self.set_mpc(params)
-        print("params:", params)
+        # print("params:", params)
 
         self.planner.has_trajectory = False
         self.plotter = None
 
         # self.robot_state = np.zeros(4, dtype=np.float64)
         # self.mpc.set_mpc_state(self.robot_state)
+        # print(self.normalize_obs)
 
         obs = np.zeros(self.state_dim, dtype=np.float64)
         obs[-self.N_alpha :] = [params["CBF_ALPHA_ABV"], params["CBF_ALPHA_BLW"]]
@@ -413,10 +417,8 @@ class CBFEnv(gym.Env):
             )
 
         trajectory = self.mpc.get_trajectory()
-        # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_params()["REF_LENGTH"])
-        # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_trajectory().get_arclen() + 2)
 
-        state = self.mpc.get_state_from_horizon(1)
+        state = self.mpc.get_state_from_horizon(0)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
         adjusted_traj = trajectory.get_adjusted_traj(
             len_start, int(self.mpc.get_params()["REF_SAMPLES"])
@@ -426,12 +428,13 @@ class CBFEnv(gym.Env):
 
         # go to length-2 because N-1 inputs in horizon of size N
         inds = np.linspace(1, horizon_len - 2, self.N_horizon, dtype=int)
-        obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha)
+        obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha + 1)
         for i in range(self.N_horizon):
             state = self.mpc.get_state_from_horizon(inds[i])
             # some numerical issue is causing s state to be -1e-<large num> for some reason
             # Casadi doesnt like that so enforcing a strict positive minimum.
             state[-2] = max(state[-2], 1e-6)
+            state[-2] = min(state[-2], adjusted_traj.get_arclen() - 1e-6)
             u = self.mpc.get_input_from_horizon(inds[i])
             acc = u[:2]
 
@@ -448,19 +451,9 @@ class CBFEnv(gym.Env):
                 "i9": adjusted_traj.get_arclen(),
             }
 
-            # cbf_abv = self.mpc.get_cbf_abv(state, self.upper_coeffs, xs, ys)
-            # lfh_abv = self.mpc.get_lfh_abv(state, self.upper_coeffs, xs, ys)
-            # lgh_abv = self.mpc.get_lgh_abv(state, self.upper_coeffs, xs, ys)
-            # lghu_abv = lgh_abv[:2] @ acc
-
             cbf_abv = self.mpc.debug_fns["h_abv"](**args)
             lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
             lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
-
-            # cbf_blw = self.mpc.get_cbf_blw(state, self.lower_coeffs, xs, ys)
-            # lfh_blw = self.mpc.get_lfh_blw(state, self.lower_coeffs, xs, ys)
-            # lgh_blw = self.mpc.get_lgh_blw(state, self.lower_coeffs, xs, ys)
-            # lghu_blw = lgh_blw[:2] @ acc
 
             cbf_blw = self.mpc.debug_fns["h_blw"](**args)
             lfh_blw = self.mpc.debug_fns["Lfh_blw"](**args)
@@ -473,75 +466,27 @@ class CBFEnv(gym.Env):
 
             if np.any(np.isnan(obs)):
                 # # args = {"i0": state, "i1": xs}
-                print(i, "state:", state)
-                signed_d = self.mpc.debug_fns("signed_d",args)
-                print(i, "signed_d", signed_d)
-                print(i, "xr:", self.mpc.debug_fns["xr"](**args))
-                print(i, "yr:", self.mpc.debug_fns["yr"](**args))
-                print(i, "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-                print(i, "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-                print(i, "phi_r:", self.mpc.debug_fns["phi_r"](**args))
-                print(i, "theta:", np.atan2(state[3], state[2]))
-                print(i, "p_abv", self.mpc.debug_fns["p_abv"](**args))
-                print(i, "p_blw", self.mpc.debug_fns["p_blw"](**args))
-                print(i, "h_abv:", self.mpc.debug_fns["h_abv"](**args))
-                print(i, "h_blw:", self.mpc.debug_fns["h_blw"](**args))
+                signed_d = self.mpc.debug_fns["signed_d"](**args)
+                print(inds[i], "state:", state)
+                print(inds[i], "traj len:", adjusted_traj.get_arclen())
+                print(inds[i], "signed_d", signed_d)
+                print(inds[i], "xr:", self.mpc.debug_fns["xr"](**args))
+                print(inds[i], "yr:", self.mpc.debug_fns["yr"](**args))
+                print(inds[i], "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+                print(inds[i], "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+                print(inds[i], "phi_r:", self.mpc.debug_fns["phi_r"](**args))
+                print(inds[i], "theta:", np.atan2(state[3], state[2]))
+                print(inds[i], "p_abv", self.mpc.debug_fns["p_abv"](**args))
+                print(inds[i], "p_blw", self.mpc.debug_fns["p_blw"](**args))
+                print(inds[i], "h_abv:", self.mpc.debug_fns["h_abv"](**args))
+                print(inds[i], "h_blw:", self.mpc.debug_fns["h_blw"](**args))
 
-                # print("e_c:", self.mpc.debug_fns["e_c"](**args))
-                # print("e_l:", self.mpc.debug_fns["e_l"](**args))
-                # h_abv = self.mpc.debug_fns["h_abv"](**args)
-                # lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
-                # lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
-                # h_blw= self.mpc.debug_fns["h_blw"](**args)
-                # lfh_blw= self.mpc.debug_fns["Lfh_blw"](**args)
-                # lghu_blw= self.mpc.debug_fns["Lghu_blw"](**args)
-
-                # print("signed d", self.mpc.debug_fns["signed_d"](**args))
                 phi_r = self.mpc.debug_fns["phi_r"](**args)
-                #
-                # print("clf_dot", self.mpc.debug_fns["lyap_dot"](**args))
-                # print("Lfv", self.mpc.debug_fns["Lfv"](**args))
-                # # print("Lgv", self.mpc.debug_fns["Lgv"](**args))
-                # print("Lgvu", self.mpc.debug_fns["Lgvu"](**args))
-                # print("clf_const", self.mpc.debug_fns["lyap_const"](**args))
-                # #
-                # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
-                # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
-                # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
-                # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
-                #
-                # print("const_abv", lfh_abv + lghu_abv + self.params["CBF_ALPHA_ABV"] * h_abv)
-                # print("const_blw", lfh_blw + lghu_blw + self.params["CBF_ALPHA_BLW"] * h_blw)
-
-        obs[-self.N_alpha :] = [
-            self.params["CBF_ALPHA_ABV"],
-            self.params["CBF_ALPHA_BLW"],
-        ]
-        # p_blw = self.mpc.debug_fns["p_blw"](**args)
-        # d_blw = self.mpc.debug_fns["d_blw"](**args)
-        # h_blw = self.mpc.debug_fns["h_blw"](**args)
-
-        # signed_d = self.mpc.get_signed_d(state, xs, ys)
-        # d_blw = self.mpc.get_d_blw(state, self.lower_coeffs)
-        # h_blw = (signed_d - d_blw) * np.exp(-p_blw)
-
-        # tmp_p = trajectory(len_start)
-        # adj_tmp_p = np.array([np.polyval(xs[::-1], 0), np.polyval(ys[::-1], 0)])
-        # adj_man_sd = np.linalg.norm(adj_tmp_p-state[:2])
-        # man_signed_d =  np.linalg.norm(tmp_p-state[:2])
-        # man_d_blw = np.polyval(self.lower_coeffs[::-1], state[-2])
-
-        # print("inputs:")
-        # for i in range(horizon.length-1):
-        #     print(horizon.get_input_at_step(i))
 
         state = self.mpc.get_state_from_horizon(0)
-        len_start = trajectory.get_closest_s(state[:2])
-        adjusted_traj = trajectory.get_adjusted_traj(
-            len_start, int(self.mpc.get_params()["REF_SAMPLES"])
-        )
-        xs = adjusted_traj.get_ctrls_x()
-        ys = adjusted_traj.get_ctrls_y()
+        state[4] = max(state[4], 1e-6)
+        u = self.mpc.get_input_from_horizon(0)
+        acc = u[:2]
 
         args = {
             "i0": state,
@@ -556,37 +501,15 @@ class CBFEnv(gym.Env):
             "i9": adjusted_traj.get_arclen(),
         }
 
-        # print("ADJUSTED LENGTH: ", adjusted_traj.get_arclen())
-        # print("state:", state)
-        # signed_d = self.mpc.debug_fns["signed_d"](**args)
-        # print("signed_d", signed_d)
-        # print("xr:", self.mpc.debug_fns["xr"](**args))
-        # print("yr:", self.mpc.debug_fns["yr"](**args))
-        # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-        # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-        # print("phi_r:", self.mpc.debug_fns["phi_r"](**args))
-        # print("theta:", np.atan2(state[3], state[2]))
-        # print("p_abv", self.mpc.debug_fns["p_abv"](**args))
-        # print("p_blw", self.mpc.debug_fns["p_blw"](**args))
-        # print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
-        # print("lfh_abv:", self.mpc.debug_fns["Lfh_abv"](**args))
-        # print("lghu_abv:", self.mpc.debug_fns["Lghu_abv"](**args))
-        # print("alpha_abv:", self.params["CBF_ALPHA_ABV"])
-        # print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
-        # print("lfh_blw:", self.mpc.debug_fns["Lfh_blw"](**args))
-        # print("lghu_blw:", self.mpc.debug_fns["Lghu_blw"](**args))
-        # print("alpha_blw:", self.params["CBF_ALPHA_BLW"])
-        # print("const_abv", self.mpc.debug_fns["Lfh_abv"](**args) + self.mpc.debug_fns["Lghu_abv"](**args) + self.params["CBF_ALPHA_ABV"]* self.mpc.debug_fns["h_abv"](**args))
-        # print("const_blw", self.mpc.debug_fns["Lfh_blw"](**args) + self.mpc.debug_fns["Lghu_blw"](**args) + self.params["CBF_ALPHA_BLW"] * self.mpc.debug_fns["h_blw"](**args))
+        print("d_abv:", self.mpc.debug_fns["d_abv"](**args))
+        print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
+        print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
 
-        # lfv = self.mpc.debug_fns["Lfv"](**args) 
-        # lgv = self.mpc.debug_fns["Lgv"](**args)
-        # lgvu = self.mpc.debug_fns["Lgvu"](**args)
-        # lyap_con = self.mpc.debug_fns["lyap_const"](**args) 
-        # print("vdot: ", lfv + lgvu)
-        # print("lgv:", lgv)
-        # print("lgvu:", lgvu)
-        # print("lyap_cons", lyap_con)
+        obs[-self.N_alpha - 1] = float(state[-1])
+        obs[-self.N_alpha :] = [
+            self.params["CBF_ALPHA_ABV"],
+            self.params["CBF_ALPHA_BLW"],
+        ]
         return obs
 
     def set_epoch(self, epoch):
@@ -641,7 +564,7 @@ class CBFEnv(gym.Env):
         self.reset()
 
     @staticmethod
-    def get_reward(obs, is_colliding, params, N_horizon):
+    def get_reward(obs, is_colliding, params, N_horizon, action):
         reward = 0
 
         # min_const_abv = 1e6
@@ -657,62 +580,58 @@ class CBFEnv(gym.Env):
             const_abv = lfh_lghu_abv + cbf_abv * obs[-2]
             const_blw = lfh_lghu_blw + cbf_blw * obs[-1]
 
-            # print(i, "cbf_abv", cbf_abv)
-            # print(i, "cbf_blw", cbf_blw)
-            # print(i, "lfh_lgh_abv", lfh_lghu_abv)
-            # print(i, "lfh_lgh_blw", lfh_lghu_blw)
-            # print(i, "const_abv", const_abv)
-            # print(i, "const_blw", const_blw)
-
-            # min_const_abv = min(min_const_abv, const_abv)
-            # min_const_blw = min(min_const_blw, const_blw)
             constraints.append(const_abv)
             constraints.append(const_blw)
 
-        rho = 100
         cons = np.array(constraints)
+        worst_const = np.min(cons)
 
-        c_min = np.min(cons)
-        exp_cons = np.exp(-rho * (cons - c_min))
-        worst_const = c_min - (1 / rho) * np.log(np.mean(np.sum(exp_cons)))
+        # rho = 50.0
+        # exp_terms = np.exp(-rho * (cons - c_min))
+        # worst_const = c_min - (1.0 / rho) * np.log(np.mean(np.sum(exp_terms)))
+        # print("approx min:", worst_const)
 
-        # print(constraints)
-        # print(c_min)
-        # print("worst_constraint:", worst_const)
+        # --------------------------------------------------
+        # 3. Asymmetric safety reward
+        # --------------------------------------------------
+        # k = 20.0
+        # constraint_reward = (
+        #     (np.log(2) / k) - (1.0 / k) * np.log1p(np.exp(k * (-worst_const)))
+        # )
 
-        # reward model for having large constraint values
-        # worst_const = min(min_const_abv, min_const_blw)
-        a = 7.0
-        reward += (np.log(2.0) - np.log1p(np.exp(-a * worst_const))) / a
-        reward = np.clip(reward, -5 * np.log(2.0)/a, np.log(2.0)/a)
-        print("CONSTRAINT_REWARD", reward)
+        reward += 0.1*np.tanh(worst_const * 5.0)
+        # print("min_const", worst_const)
+        print("constraint:", reward)
+        # print("constraint", np.clip(.5 * constraint_reward, -.5, .2))
+        # reward += np.clip(.5 *constraint_reward, -.5, .2)
 
-        avg = (params["MIN_ALPHA"] + params["MAX_ALPHA"]) / 2
+        # --------------------------------------------------
+        # 4. Progress reward
+        # --------------------------------------------------
+        s_dot = obs[-3] / params["LINVEL"]
+        print("sdot", 0.1 * (1-s_dot))
+        reward -= 0.1 * (1-s_dot)
+
+        # --------------------------------------------------
+        # 5. Alpha bounds 
+        # --------------------------------------------------
+        avg = 0.5 * (params["MIN_ALPHA"] + params["MAX_ALPHA"])
         alphas = (obs[-2:] - avg) / avg
-        d = np.minimum(alphas - (-1.), 1. - alphas)
-        # print(alphas,d)
+        d = np.minimum(alphas + 1.0, 1.0 - alphas)
 
-        # penalize alpha being too large
-        # penalize alpha leaving prescribed bounds
-        alpha_reward = 0
-        # alpha_reward = -.1 * np.sum((obs[-self.N_alpha:] - self.params["MIN_ALPHA"]) / (self.params["MAX_ALPHA"] - self.params["MIN_ALPHA"]))
+        print("alpha bounds", -.005* np.sum((d[d < 0])**2))
+        reward -= .005 * np.sum((d[d < 0])**2)
 
-        # print("largeness:", alpha_reward)
-        # alpha_reward -= (1./2) * np.sum((d[d < 0])**2)
-        alpha_reward -= np.sum((d[d<0])**2)
+        print("regularization:", -.0005 * np.linalg.norm(action))
+        reward -= .0005 * np.linalg.norm(action)
+        # print("total reward", reward)
 
-        print("ALPHA_REWARD:", alpha_reward)
-
-        reward += alpha_reward
-
-        # solver_status = self.mpc.get_solver_status()
-        # reward += -0.05 if not solver_status else 0.0
-
+        # --------------------------------------------------
+        # 6. Hard failure
+        # --------------------------------------------------
         if is_colliding:
-            # print("total reward before collision:", self.total_reward)
-            reward = -5.0
-
-        print("REWARD", reward)
+            print("COLLIDED!!!")
+            return -5.0
 
         return reward
 
@@ -747,9 +666,7 @@ class CBFEnv(gym.Env):
                 theta = init_state[2]
                 start[:2, 1] = init_state[3] * np.array([np.cos(theta), np.sin(theta)])
             elif self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
-                print("state is: ", init_state)
                 start[:2, 1] = np.array([init_state[2], init_state[3]])
-                print(start[:2, 1])
 
             self.planner.set_costmap(self.map_util)
             self.planner.set_start(start)
@@ -759,13 +676,11 @@ class CBFEnv(gym.Env):
 
         if status == PlannerStatus.SUCCESS:
             self.knots, self.xs, self.ys = self.planner.get_arclen_traj()
-            print("setting trajectory")
             self.mpc.set_trajectory(
                 self.xs,
                 self.ys,
                 self.knots,
             )
-            print("done")
 
         if status is not None:
             self.traj_planner_success = (
@@ -784,6 +699,7 @@ class CBFEnv(gym.Env):
 
         count = 1
         while status != PlannerStatus.SUCCESS and count < 10:
+            print(count)
             self.planner.set_start(start)
             self.planner.set_goal(goal)
             self.planner.set_costmap(self.map_util)
@@ -840,10 +756,10 @@ def main(record_data, manual_step, task_num, world_sweep, world_num):
     elif not world_sweep:
         world_count = 0
         obs_count = 0
-        n_samples = 1e5
+        n_samples = 5e4
         # n_samples = 1e2
         done = False
-        stats = RunningStats(12)
+        stats = RunningStats(13)
         with open("obs_log.csv", "w", newline="") as f:
             writer = csv.writer(f)
 
@@ -874,17 +790,28 @@ def main(record_data, manual_step, task_num, world_sweep, world_num):
                     if done:
                         world_count += 1
 
-        cbf_abv_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 0]
-        cbf_dot_abv_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 1]
+                    if obs_count > n_samples:
+                        break
 
-        cbf_blw_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 2]
-        cbf_dot_blw_mu = [mu for i, mu in enumerate(stats.mean) if i % 4 == 3]
+                if obs_count > n_samples:
+                    break
 
-        cbf_abv_std = [std for i, std in enumerate(stats.std) if i % 4 == 0]
-        cbf_dot_abv_std = [std for i, std in enumerate(stats.std) if i % 4 == 1]
+        s_dot_mu = stats.mean[-1]
+        s_dot_std = stats.std[-1]
 
-        cbf_blw_std = [std for i, std in enumerate(stats.std) if i % 4 == 2]
-        cbf_dot_blw_std = [std for i, std in enumerate(stats.std) if i % 4 == 3]
+        mean = stats.mean[:-1]
+        std = stats.std[:-1]
+        cbf_abv_mu = [mu for i, mu in enumerate(mean) if i % 4 == 0]
+        cbf_dot_abv_mu = [mu for i, mu in enumerate(mean) if i % 4 == 1]
+
+        cbf_blw_mu = [mu for i, mu in enumerate(mean) if i % 4 == 2]
+        cbf_dot_blw_mu = [mu for i, mu in enumerate(mean) if i % 4 == 3]
+
+        cbf_abv_std = [std for i, std in enumerate(std) if i % 4 == 0]
+        cbf_dot_abv_std = [std for i, std in enumerate(std) if i % 4 == 1]
+
+        cbf_blw_std = [std for i, std in enumerate(std) if i % 4 == 2]
+        cbf_dot_blw_std = [std for i, std in enumerate(std) if i % 4 == 3]
 
         print("CBF_ABV_MEAN:", np.average(cbf_abv_mu))
         print("CBF_DOT_ABV_MEAN:", np.average(cbf_dot_abv_mu))
@@ -897,15 +824,17 @@ def main(record_data, manual_step, task_num, world_sweep, world_num):
         print("CBF_DOT_BLW_STD:", np.average(cbf_dot_blw_std))
 
         print("Code -------------")
-        print("obs_mu[RLObs.CBF_ABV]", np.round(np.average(cbf_abv_mu), 4))
-        print("obs_mu[RLObs.LFH_LGH_ABV]", np.round(np.average(cbf_dot_abv_mu), 4))
-        print("obs_mu[RLObs.CBF_BLW]", np.round(np.average(cbf_blw_mu), 4))
-        print("obs_mu[RLObs.LFH_LGH_BLW]:", np.round(np.average(cbf_dot_blw_mu), 4))
+        print("obs_mu[RLObs.CBF_ABV] =",     np.round(np.average(cbf_abv_mu), 4))
+        print("obs_mu[RLObs.LFH_LGH_ABV] =", np.round(np.average(cbf_dot_abv_mu), 4))
+        print("obs_mu[RLObs.CBF_BLW] =",     np.round(np.average(cbf_blw_mu), 4))
+        print("obs_mu[RLObs.LFH_LGH_BLW] =", np.round(np.average(cbf_dot_blw_mu), 4))
+        print("obs_mu[-3] =",  np.round(s_dot_mu, 4))
 
-        print("obs_std[RLObs.CBF_ABV]", np.round(np.average(cbf_abv_std), 4))
-        print("obs_std[RLObs.LFH_LGH_ABV]", np.round(np.average(cbf_dot_abv_std), 4))
-        print("obs_std[RLObs.CBF_BLW]", np.round(np.average(cbf_blw_std), 4))
-        print("obs_std[RLObs.LFH_LGH_BLW]", np.round(np.average(cbf_dot_blw_std), 4))
+        print("obs_std[RLObs.CBF_ABV] =",      np.round(np.average(cbf_abv_std), 4))
+        print("obs_std[RLObs.LFH_LGH_ABV] =",  np.round(np.average(cbf_dot_abv_std), 4))
+        print("obs_std[RLObs.CBF_BLW] =",      np.round(np.average(cbf_blw_std), 4))
+        print("obs_std[RLObs.LFH_LGH_BLW] =",  np.round(np.average(cbf_dot_blw_std), 4))
+        print("obs_std[-3] =",  np.round(s_dot_std, 4))
 
         print("ROW_COUNT:", obs_count)
 

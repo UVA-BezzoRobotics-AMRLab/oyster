@@ -8,7 +8,7 @@ controller_frequency: 10
 
 # dynamics
 max_angvel: 1.5
-max_linvel: 2.0
+max_linvel: 2.5
 max_linacc: 3.2
 max_angacc: 6.283
 
@@ -38,11 +38,11 @@ cbf_padding: .05
 
 # rl training params
 min_alpha: 0.025
-max_alpha: 5.0
+max_alpha: 10.0
 
 # cbf adaptation params
-min_alpha_dot: -3
-max_alpha_dot: 3
+min_alpha_dot: -6
+max_alpha_dot: 6
 min_h_val: -10.
 max_h_val: 100.
 
