@@ -9,7 +9,7 @@ controller_frequency: 10
 # dynamics
 max_angvel: 1.5
 # max_linvel: 5.5
-max_linvel: 3.0
+max_linvel: 2.5
 max_linacc: 3.2
 max_angacc: 6.283
 

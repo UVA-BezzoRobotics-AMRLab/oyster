@@ -46,8 +46,12 @@ class PyPlanner:
 
         return status
 
-    def get_arclen_traj(self):
-        traj = self.planner.get_arclen_traj()
+    def get_arclen_traj(self, refine=False):
+        # if refine:
+        #     traj = self.planner.refine_traj()
+        # else:
+        traj = self.planner.get_arclen_traj(refine)
+
         knots = np.array([x.t for x in traj])
         xs = np.array([x.pos[0] for x in traj])
         ys = np.array([x.pos[1] for x in traj])

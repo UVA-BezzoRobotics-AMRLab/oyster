@@ -6,7 +6,6 @@ import numpy as np
 import click
 import torch
 
-from RobotEnv import RobotEnv
 from matplotlib import pyplot as plt
 from oyster.rlkit.torch.sac.policies import TanhGaussianPolicy
 from oyster.rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder
@@ -34,16 +33,16 @@ def sim_policy(
 
     # create multi-task environment and sample tasks
     max_path_length = 1000
-    env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[285, 140, 245], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    # env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    N = 1
+    N = 0
     eval_tasks=list(tasks[-variant['n_eval_tasks']+ N -1:-variant['n_eval_tasks'] + N])
     # eval_tasks=list([tasks[-1]])
     print(

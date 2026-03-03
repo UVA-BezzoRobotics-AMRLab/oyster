@@ -57,6 +57,8 @@ class ParameterLoader:
             "ANGLE_GAIN": params["prop_gain"],
             "ANGLE_THRESH": params["prop_gain_thresh"],
         }
+        ps["MIN_ALPHA"] = 0.5
+        ps["MAX_ALPHA"] = 6.0
 
         self.param_dicts.append(ps)
 

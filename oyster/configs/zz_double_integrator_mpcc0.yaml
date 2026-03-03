@@ -8,7 +8,7 @@ controller_frequency: 10
 
 # dynamics
 max_angvel: 1.5
-max_linvel: 1.0
+max_linvel: 1.5
 max_linacc: 3.2
 max_angacc: 6.283
 
@@ -33,7 +33,7 @@ clf_gamma: 10.0
 # clf_gamma: .5
 
 # CBF params
-use_cbf: true
+use_cbf: True
 cbf_alpha_abv: 0.5
 cbf_alpha_blw: 0.5
 cbf_colinear: .05

@@ -17,6 +17,7 @@ from oyster.MapLoader import parse_xml_file, generate_map_from_cylinders
 
 from py_planner import Planner
 from py_planner import RFNState
+from py_planner import MapLayer
 from py_planner import vec_Vec2d, vec_MatX4d
 from py_planner import PlannerStatus
 from py_planner import PlannerParams
@@ -74,6 +75,7 @@ class CBFEnv(gym.Env):
         # 282 is a really nice world!!!
         # large alpha trouble from 140 to 285
         # mid alpha trouble from 255 to  285
+        # 292 is a nice world as well
         # include some other worlds for training as well...
         self.worlds = [280, 290, 140, 245, 285, 255, 265, 275, 5, 282, 296, 111]
 
@@ -86,10 +88,10 @@ class CBFEnv(gym.Env):
         self.planner_params = PlannerParams()
         self.planner_params.SOLVER = "faster"
         # self.planner_params.SOLVER = "gcopter"
-        self.planner_params.W_MAX = 1.8
-        self.planner_params.V_MAX = 50
-        self.planner_params.A_MAX = 60
-        self.planner_params.J_MAX = 150
+        self.planner_params.W_MAX = 5
+        self.planner_params.V_MAX = 100
+        self.planner_params.A_MAX = 500
+        self.planner_params.J_MAX = 3000
         self.planner_params.DT_FACTOR_INIT = 1.0
         self.planner_params.DT_FACTOR_FINAL = 10.0
         self.planner_params.DT_FACTOR_INCREMENT = 1.0
@@ -179,6 +181,19 @@ class CBFEnv(gym.Env):
             float(self.occupancy_grid.info.origin.position[0]),
             float(self.occupancy_grid.info.origin.position[1]),
             np.array(self.occupancy_grid.data),
+            np.array([253, 254]),
+            np.array([255]),
+        )
+
+        self.collision_occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0, 
+                                                                    obstacle_inflation = 0.25)
+        self.collision_map_util = OccupancyGrid(
+            self.collision_occupancy_grid.info.width,
+            self.collision_occupancy_grid.info.height,
+            self.collision_occupancy_grid.info.resolution,
+            float(self.collision_occupancy_grid.info.origin.position[0]),
+            float(self.collision_occupancy_grid.info.origin.position[1]),
+            np.array(self.collision_occupancy_grid.data),
             np.array([253, 254]),
             np.array([255]),
         )
@@ -298,8 +313,10 @@ class CBFEnv(gym.Env):
         # print("ROBOT_STATE before:", self.robot_state)
         self.robot_state = self.mpc.apply_control(u)
         tube = self.mpc.get_tube()
-        self.upper_coeffs = tube[0].get_coeffs()
-        self.lower_coeffs = tube[1].get_coeffs()
+
+        if self.params["USE_CBF"]:
+            self.upper_coeffs = tube[0].get_coeffs()
+            self.lower_coeffs = tube[1].get_coeffs()
 
         # print(self.upper_coeffs)
         # print(self.lower_coeffs)
@@ -315,13 +332,19 @@ class CBFEnv(gym.Env):
 
         is_colliding = False
         try:
-            is_colliding = self.map_util.is_occupied(
-                self.robot_state[0], self.robot_state[1], "inflated"
+            is_colliding = self.collision_map_util.is_occupied(
+                self.robot_state[0], self.robot_state[1], MapLayer.kInflated
             )
         except:
             print("Warning, robot position is outside map boundary...")
 
         self.did_collide = is_colliding
+
+        st = time.time()
+        dist = self.map_util.sdf_dist(self.robot_state[0], self.robot_state[1], MapLayer.kInflated)
+        en = time.time() - st
+        print("dist from robot to nearest obstacle:", dist)
+        print("time:", en)
 
         # ---------------- reward ----------------
         reward = CBFEnv.get_reward(obs, is_colliding, self.params, self.N_horizon, action)
@@ -388,8 +411,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # params["USE_CBF"] = False
-        # params["CBF_ALPHA_ABV"] = 8.0
-        # params["CBF_ALPHA_BLW"] = 8.0
+        # params["CBF_ALPHA_ABV"] = 6.0
+        # params["CBF_ALPHA_BLW"] = 6.0
 
         self.set_mpc(params)
         # print("params:", params)
@@ -466,20 +489,19 @@ class CBFEnv(gym.Env):
 
             if np.any(np.isnan(obs)):
                 # # args = {"i0": state, "i1": xs}
-                signed_d = self.mpc.debug_fns["signed_d"](**args)
-                print(inds[i], "state:", state)
-                print(inds[i], "traj len:", adjusted_traj.get_arclen())
-                print(inds[i], "signed_d", signed_d)
-                print(inds[i], "xr:", self.mpc.debug_fns["xr"](**args))
-                print(inds[i], "yr:", self.mpc.debug_fns["yr"](**args))
-                print(inds[i], "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-                print(inds[i], "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-                print(inds[i], "phi_r:", self.mpc.debug_fns["phi_r"](**args))
-                print(inds[i], "theta:", np.atan2(state[3], state[2]))
-                print(inds[i], "p_abv", self.mpc.debug_fns["p_abv"](**args))
-                print(inds[i], "p_blw", self.mpc.debug_fns["p_blw"](**args))
-                print(inds[i], "h_abv:", self.mpc.debug_fns["h_abv"](**args))
-                print(inds[i], "h_blw:", self.mpc.debug_fns["h_blw"](**args))
+                print(i, "state:", state)
+                # signed_d = self.mpc.debug_fns("signed_d",args)
+                # print(i, "signed_d", signed_d)
+                print(i, "xr:", self.mpc.debug_fns["xr"](**args))
+                print(i, "yr:", self.mpc.debug_fns["yr"](**args))
+                print(i, "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+                print(i, "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+                print(i, "phi_r:", self.mpc.debug_fns["phi_r"](**args))
+                print(i, "theta:", np.atan2(state[3], state[2]))
+                print(i, "p_abv", self.mpc.debug_fns["p_abv"](**args))
+                print(i, "p_blw", self.mpc.debug_fns["p_blw"](**args))
+                print(i, "h_abv:", self.mpc.debug_fns["h_abv"](**args))
+                print(i, "h_blw:", self.mpc.debug_fns["h_blw"](**args))
 
                 phi_r = self.mpc.debug_fns["phi_r"](**args)
 
@@ -501,9 +523,17 @@ class CBFEnv(gym.Env):
             "i9": adjusted_traj.get_arclen(),
         }
 
-        print("d_abv:", self.mpc.debug_fns["d_abv"](**args))
+        vxr = self.mpc.debug_fns["xr_dot"](**args)
+        vyr = self.mpc.debug_fns["yr_dot"](**args)
+
+        # print("v", [vxr, vyr])
+        # print("d_abv:", self.mpc.debug_fns["d_abv"](**args))
+        print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+        print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
         print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
         print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
+        # print("Lghu_abv", self.mpc.debug_fns["Lghu_abv"](**args))
+        # print("Lghu_blw", self.mpc.debug_fns["Lghu_blw"](**args))
 
         obs[-self.N_alpha - 1] = float(state[-1])
         obs[-self.N_alpha :] = [
@@ -529,7 +559,8 @@ class CBFEnv(gym.Env):
         if self.plotter is None:
             self.plotter = BarnPlotter(
                 trajectory.view(),
-                self.occupancy_grid,
+                self.collision_occupancy_grid,
+                self.collision_map_util,
                 self.upper_coeffs,
                 self.lower_coeffs,
                 self.mpc,
@@ -657,7 +688,9 @@ class CBFEnv(gym.Env):
         elif self.step_count % 5 == 0 or not self.traj_planner_success:
             # horizon = self.mpc.get_horizon()
 
-            init_state = self.mpc.get_state_from_horizon(2)
+            ind = 2
+            init_state = self.mpc.get_state_from_horizon(ind)
+            init_u = self.mpc.get_input_from_horizon(ind)
             start = np.zeros((3, 4))
             # start[:2,0] = self.current_ref
             # start[:2, 0] = self.robot_state[:2]
@@ -675,17 +708,21 @@ class CBFEnv(gym.Env):
             status = self.planner.plan(jpsPath, polys)
 
         if status == PlannerStatus.SUCCESS:
-            self.knots, self.xs, self.ys = self.planner.get_arclen_traj()
+            self.knots, self.xs, self.ys = self.planner.get_arclen_traj(False)
             self.mpc.set_trajectory(
                 self.xs,
                 self.ys,
                 self.knots,
             )
 
+            traj_vel = self.mpc.get_trajectory()(0, 1)
+            print("trajectory tangent", traj_vel / np.linalg.norm(traj_vel))
+
         if status is not None:
             self.traj_planner_success = (
                 True if status == PlannerStatus.SUCCESS else False
             )
+
 
     def _plan(self, start, goal):
 

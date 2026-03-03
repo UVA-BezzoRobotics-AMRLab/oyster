@@ -63,17 +63,25 @@ def parse_xml_file(xml_file, offset=0.0):
 def generate_map_from_cylinders(cylinders, theta, dx, dy,
                                 obstacle_inflation=0.30,   # meters
                                 inflation_cost=253,
-                                obstacle_cost=254):
+                                obstacle_cost=254, 
+                                width=1000,
+                                height=1200,
+                                resolution=0.05,
+                                origin=np.array([-25., -15., 0.])):
+    if (len(origin) != 3):
+        print("origin does not have proper dimension (3)")
+        return None
+
     grid = OccupancyGrid()
     # total_y = 2 * ENV_Y
     # grid.info.width  = int(ENV_X / grid.info.resolution) + 200
     # grid.info.height = int(total_y / grid.info.resolution) + 200
     # grid.info.origin.position = np.array([-ENV_X/2, -1.0, 0.])
-    grid.info.width = 1000
-    grid.info.height = 1200
-    grid.info.resolution = 0.05
+    grid.info.width = width
+    grid.info.height = height
+    grid.info.resolution = resolution
     grid.info.origin = Pose()
-    grid.info.origin.position = np.array([-25., -15., 0.])
+    grid.info.origin.position = origin
     grid.info.origin.orientation = np.array([0, 0, 0, 1])
 
     grid.data = [0] * grid.info.width * grid.info.height

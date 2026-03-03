@@ -14,6 +14,8 @@ from oyster.MapLoader import OccupancyGrid
 from matplotlib.patches import Circle, Polygon
 from matplotlib.animation import FFMpegWriter
 
+from py_planner import MapLayer
+
 from py_mpcc import extend_trajectory
 
 
@@ -22,6 +24,7 @@ class BarnPlotter:
         self,
         curve,
         occ_grid,
+        map_util,
         upper_coeffs,
         lower_coeffs,
         mpc,
@@ -51,6 +54,9 @@ class BarnPlotter:
         self.save_video = save_video
         self.fps = fps
         self.writer = None
+
+        self.map_util = map_util
+        self.sdf_im = None
 
         if render:
             self.init_plot(curve, occ_grid, upper_coeffs, lower_coeffs, mpc)
@@ -113,8 +119,14 @@ class BarnPlotter:
 
         if self.dynamics == Dynamics.DOUBLE_INTEGRATOR:
             self.robot_patch = Circle(
-                (0, 0), self.robot_size, color="blue", label="robot", zorder=100
+                (0, 0), self.robot_size, color="blue", label="robot", zorder=0
             )
+            # self.robot_patch = Polygon(
+            #     self.robot_footprint,
+            #     closed=True,
+            #     color="blue",
+            #     label="robot",
+            # )
         else:
             self.robot_patch = Polygon(
                 self.robot_footprint,
@@ -124,6 +136,7 @@ class BarnPlotter:
             )
 
         self.init_curve(curve)
+        self.init_sdf_layer()
 
         (self.ref_point,) = self.ax.plot([], [], "ro", label="reference")
 
@@ -157,6 +170,19 @@ class BarnPlotter:
             dyn_str = str(self.dynamics).split('.')[-1]
             fname = f"{dyn_str}_{v_max_str}_{t_str}.mp4"
             self.writer.setup(self.fig, os.path.join(video_folder, fname), dpi=100)
+
+    def init_sdf_layer(self):
+        # placeholder 2D array (will be updated in render)
+        sdf = np.zeros((50, 50))
+
+        self.sdf_im = self.ax.imshow(
+            sdf,
+            origin="lower",
+            cmap="coolwarm",
+            alpha=0.6,
+            zorder=1,     # above occupancy, below robot
+            interpolation="bilinear"
+        )
 
     def init_grid(self, grid, ax=None):
         if ax is None:
@@ -320,6 +346,13 @@ class BarnPlotter:
     def render(self, robot_state, current_ref, curve, mpc, upper_coeffs, lower_coeffs):
         if self.dynamics == Dynamics.DOUBLE_INTEGRATOR:
             self.robot_patch.center = (robot_state[0], robot_state[1])
+            # theta = np.atan2(robot_state[3], robot_state[2])
+            # R = np.array(
+            #     [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
+            # )
+            # footprint = np.dot(self.robot_footprint, R.T)
+            # print((footprint + robot_state[:2]).reshape(-1, 2))
+            # self.robot_patch.set_xy((footprint + robot_state[:2]).reshape(-1, 2))
         else:
             theta = robot_state[2]
             R = np.array(
@@ -329,7 +362,7 @@ class BarnPlotter:
             # print((footprint + robot_state[:2]).reshape(-1, 2))
             self.robot_patch.set_xy((footprint + robot_state[:2]).reshape(-1, 2))
 
-        self.ref_point.set_data([current_ref[0]], [current_ref[1]])
+        # self.ref_point.set_data([current_ref[0]], [current_ref[1]])
 
         if len(self.prev_states) > 1:
             path = np.array(self.prev_states)
@@ -424,6 +457,28 @@ class BarnPlotter:
 
         self.ax_cbfs.relim()
         self.ax_cbfs.autoscale_view()
+
+        # sdf
+        N = 60  # grid resolution for heatmap
+        xs = np.linspace(x - half_sz, x + half_sz, N)
+        ys = np.linspace(y - half_sz, y + half_sz, N)
+
+        X, Y = np.meshgrid(xs, ys)
+        sdf_vals = np.zeros_like(X)
+
+
+        vec_sdf = np.vectorize(self.map_util.sdf_dist)
+        sdf_vals = vec_sdf(X, Y, MapLayer.kInflated)
+        # for i in range(N):
+        #     for j in range(N):
+        #         sdf_vals[i, j] = self.map_util.sdf_dist(X[i, j], Y[i, j], MapLayer.kInflated)
+
+        self.sdf_im.set_data(sdf_vals)
+        self.sdf_im.set_extent((x - half_sz, x + half_sz,
+                                y - half_sz, y + half_sz))
+
+        # optional: dynamic color scaling
+        self.sdf_im.set_clim(vmin=0, vmax=0.5)
 
         plt.pause(0.001)
 
