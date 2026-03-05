@@ -52,10 +52,14 @@ def load_results(filepath, task_num=None):
                 world   = int(parts[0])
                 success = int(parts[2])
                 steps   = int(parts[3])
+                clearance = float(parts[4])
 
+                if clearance < 0.09:
+                    success = 0
                 # Timeout = implicit failure
                 # if steps == 250:
                 #     success = 0
+
                 world_successes[world].append(success)
 
                 # Clearance (5th column, index 4) -- all trials included
