@@ -14,6 +14,7 @@ from oyster.Bezier import BezierCurve
 from oyster.ParamLoader import ParameterLoader
 from oyster.RobotMPC import RobotMPC, Dynamics
 from oyster.MapLoader import parse_xml_file, generate_map_from_cylinders
+from oyster.Logger import Logger
 
 from py_planner import Planner
 from py_planner import RFNState
@@ -148,7 +149,7 @@ class CBFEnv(gym.Env):
 
     def set_world(self, world_num):
         try:
-            obstacles = []
+            self.obstacles = []
             # offsets = [-5, 3]
             offsets = [-5 + 8 * i for i in range(len(world_num))]
             print(world_num)
@@ -160,13 +161,13 @@ class CBFEnv(gym.Env):
                     f"world_{world}.world",
                 )
                 obs = parse_xml_file(path, offsets[i])
-                if len(obstacles) == 0:
-                    obstacles = obs
+                if len(self.obstacles) == 0:
+                    self.obstacles = obs
                 else:
-                    obstacles = np.concatenate((obstacles, obs))
+                    self.obstacles = np.concatenate((self.obstacles, obs))
 
         except Exception as e:
-            obstacles = None
+            self.obstacles = None
             print(
                 "[ERROR] Loading obstacles did not work, has BARN dataset been installed and the BARN_DATASET_PATH",
                 "environment variable been set to it's top level directory location?",
@@ -174,7 +175,7 @@ class CBFEnv(gym.Env):
             print(str(e))
             exit(0)
 
-        self.occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
+        self.occupancy_grid = generate_map_from_cylinders(self.obstacles, 0, 0, 0)
         self.map_util = OccupancyGrid(
             self.occupancy_grid.info.width,
             self.occupancy_grid.info.height,
@@ -186,7 +187,7 @@ class CBFEnv(gym.Env):
             np.array([255]),
         )
 
-        self.collision_occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0, 
+        self.collision_occupancy_grid = generate_map_from_cylinders(self.obstacles, 0, 0, 0, 
                                                                     obstacle_inflation = 0.25)
         self.collision_map_util = OccupancyGrid(
             self.collision_occupancy_grid.info.width,
@@ -249,7 +250,10 @@ class CBFEnv(gym.Env):
 
         init_pose = np.concatenate((self._start[:2, 0], [init_theta]))
         self.mpc = RobotMPC(init_pose, self.params)
+
         self.mpc.set_occ_map(self.occupancy_grid)
+        # occ = generate_map_from_cylinders(self.obstacles, 0, 0, 0, obstacle_inflation=0.0)
+        # self.mpc.set_occ_map(occ)
         self.robot_state = self.mpc.get_robot_state()
 
         self.upper_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
@@ -326,6 +330,8 @@ class CBFEnv(gym.Env):
         self.current_ref = trajectory(len_start)
 
         obs = self.get_obs()
+        print("obs shape:", obs.shape)
+        print("mu shape:", self.obs_mu.shape)
         # print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
@@ -560,8 +566,8 @@ class CBFEnv(gym.Env):
         if self.plotter is None:
             self.plotter = BarnPlotter(
                 trajectory.view(),
-                self.collision_occupancy_grid,
-                self.collision_map_util,
+                self.occupancy_grid,
+                self.map_util,
                 self.upper_coeffs,
                 self.lower_coeffs,
                 self.mpc,
@@ -778,20 +784,32 @@ class RunningStats:
 @click.command()
 @click.option("--world_num", default=0)
 @click.option("--task_num", default=0)
+@click.option("--log_data", is_flag=True, default=False)
 @click.option("--world_sweep", is_flag=True, default=False)
 @click.option("--record_data", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(record_data, manual_step, task_num, world_sweep, world_num):
+def main(record_data, manual_step, task_num, world_sweep, world_num, log_data):
 
     if not record_data and not world_sweep:
+        if log_data:
+            logger = Logger()
+
         env = CBFEnv(world_num=[world_num], manual_step=manual_step)
         env.reset_task(task_num)
         done = False
         world_count = 0
         obs_count = 0
+        if log_data:
+            logger.log_static_obstacles(env.obstacles)
         while not done:
             obs, reward, done, _ = env.step([0, 0])
+            if log_data:
+                logger.log_frame(env.robot_state[:3], (env.knots, env.xs, env.ys), env.upper_coeffs, env.lower_coeffs)
+
             env.render()
+
+        if log_data:
+            logger.save()
 
     elif not world_sweep:
         world_count = 0

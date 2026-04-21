@@ -32,7 +32,8 @@ def sim_policy(
     """
 
     # create multi-task environment and sample tasks
-    max_path_length = 1000
+    # max_path_length = 1000
+    max_path_length = 250
     # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[285, 140, 245], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
