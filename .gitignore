@@ -10,4 +10,3 @@ videos/
 __pycache__/
 *.egg*
 build/
-*.txt

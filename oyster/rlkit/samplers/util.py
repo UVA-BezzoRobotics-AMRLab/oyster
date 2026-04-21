@@ -44,7 +44,9 @@ def rollout(
     # if animated:
     #     env.render()
     while path_length < max_path_length:
+        print("normed_obs is", o)
         a, agent_info = agent.get_action(o)
+        print("action is", a)
         next_o, r, d, env_info = env.step(a)
         # update the agent's current context
         if accum_context:

@@ -66,7 +66,7 @@ def generate_map_from_cylinders(cylinders, theta, dx, dy,
                                 obstacle_cost=254, 
                                 width=1000,
                                 height=1200,
-                                resolution=0.05,
+                                resolution=0.025,
                                 origin=np.array([-25., -15., 0.])):
     if (len(origin) != 3):
         print("origin does not have proper dimension (3)")
