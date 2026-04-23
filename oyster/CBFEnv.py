@@ -418,8 +418,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         params["USE_CBF"] = True
-        # params["CBF_ALPHA_ABV"] = 3
-        # params["CBF_ALPHA_BLW"] = 3
+        params["CBF_ALPHA_ABV"] = 6
+        params["CBF_ALPHA_BLW"] = 6
 
         self.set_mpc(params)
         # print("params:", params)

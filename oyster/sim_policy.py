@@ -43,7 +43,7 @@ def sim_policy(
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    N = 0
+    N = 1
     eval_tasks=list(tasks[-variant['n_eval_tasks']+ N -1:-variant['n_eval_tasks'] + N])
     # eval_tasks=list([tasks[-1]])
     print(
@@ -85,6 +85,7 @@ def sim_policy(
         agent = MakeDeterministic(agent)
 
     # load trained weights (otherwise simulate random policy)
+    # itr = 74
     itr = 74
     cpu_device = None if torch.cuda.is_available() else torch.device('cpu')
     context_encoder.load_state_dict(
@@ -154,7 +155,7 @@ def sim_policy(
 @click.argument("config", default=None)
 @click.argument("path", default=None)
 @click.option("--world_num", default=0)
-@click.option("--num_trajs", default=3)
+@click.option("--num_trajs", default=2)
 @click.option("--deterministic", is_flag=True, default=False)
 @click.option("--video", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
