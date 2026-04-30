@@ -6,6 +6,8 @@ import numpy as np
 import click
 import torch
 
+from datetime import datetime
+from oyster.Logger import Logger
 from matplotlib import pyplot as plt
 from oyster.rlkit.torch.sac.policies import TanhGaussianPolicy
 from oyster.rlkit.torch.networks import FlattenMlp, MlpEncoder, RecurrentEncoder
@@ -18,7 +20,7 @@ from oyster.CBFEnv import CBFEnv
 
 
 def sim_policy(
-    variant, path_to_exp, world_num=0, num_trajs=1, deterministic=False, save_video=False, manual_step=False
+    variant, path_to_exp, world_num=0, num_trajs=1, deterministic=False, save_video=False, log_data=False, manual_step=False
 ):
     """
     simulate a trained policy adapting to a new task
@@ -36,14 +38,15 @@ def sim_policy(
     max_path_length = 250
     # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    # env = CBFEnv(world_num=[285, 140, 245], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    # env = CBFEnv(world_num=[282, 290, 0], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    # env = CBFEnv(world_num=[0, 282, 290], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    N = 2
+    N = 3
     eval_tasks=list(tasks[-variant['n_eval_tasks']+ N -1:-variant['n_eval_tasks'] + N])
     # eval_tasks=list([tasks[-1]])
     print(
@@ -102,6 +105,19 @@ def sim_policy(
         agent.clear_z()
         paths = []
         for n in range(num_trajs):
+            logger = None
+            if log_data:
+                titles = {
+                    6: "di_1_5", 
+                    7: "di_2_5", 
+                    8: "uni_1_8", 
+                    9: "uni_1_5", 
+                }
+                now = datetime.now()
+                date_str = now.strftime("%Y_%m_%d_%H%M%S")
+                logger = Logger(f"world_{env.world_nums[0]}_{titles[idx]}_{date_str}.json")
+                logger.log_static_obstacles(env.obstacles)
+
             path = rollout(
                 env,
                 agent,
@@ -109,6 +125,7 @@ def sim_policy(
                 accum_context=True,
                 save_frames=False,
                 animated=True,
+                logger=logger,
             )
             paths.append(path)
             # if save_video:
@@ -118,10 +135,12 @@ def sim_policy(
 
             total_rets.append([env.total_reward])
 
+            if log_data:
+                logger.save()
+
         all_rets.append([sum(p["rewards"]) for p in paths])
 
         if save_video:
-            from datetime import datetime
 
             current_datetime = datetime.now()
             date_str = current_datetime.strftime("%H_%M_%S_%d-%m-%Y")
@@ -149,6 +168,7 @@ def sim_policy(
 
     print("total rets:")
     print(total_rets)
+    a = input()
 
 
 @click.command()
@@ -158,14 +178,15 @@ def sim_policy(
 @click.option("--num_trajs", default=2)
 @click.option("--deterministic", is_flag=True, default=False)
 @click.option("--video", is_flag=True, default=False)
+@click.option("--log_data", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(config, path, world_num, num_trajs, deterministic, video, manual_step):
+def main(config, path, world_num, num_trajs, deterministic, video, log_data, manual_step):
     variant = default_config
     if config:
         with open(osp.join(config)) as f:
             exp_params = json.load(f)
         variant = deep_update_dict(exp_params, variant)
-    sim_policy(variant, path, world_num, num_trajs, deterministic, video, manual_step)
+    sim_policy(variant, path, world_num, num_trajs, deterministic, video, log_data, manual_step)
 
 
 if __name__ == "__main__":
