@@ -6,6 +6,8 @@ class Logger:
         self.filename = filename
         self.data = {
             "static_obstacles": [], # List of [x, y, radius]
+            "start_pos": [],
+            "goal_pos": [],
             "frames": []
         }
 
@@ -23,7 +25,11 @@ class Logger:
         """
         self.data["static_obstacles"] = self._ensure_list(obstacle_list)
 
-    def log_frame(self, robot_pos, trajectory_tuple, tube_top, tube_bottom):
+    def log_start_and_goal(self, start, goal):
+        self.data["start_pos"] = self._ensure_list(start)
+        self.data["goal_pos"] = self._ensure_list(goal_pos)
+
+    def log_frame(self, robot_pos, velocity, obs, mpc_horizon, trajectory_tuple, tube_top, tube_bottom):
         """
         robot_pos: [x, y] or [x, y, z]
         trajectory_tuple: (knots, xs, ys)
@@ -33,6 +39,12 @@ class Logger:
         
         frame = {
             "robot_pos": self._ensure_list(robot_pos),
+            "velocity": velocity,
+            "cbf_upper": obs[0],
+            "cbf_lower": obs[2],
+            "alpha_upper": obs[-2],
+            "alpha_lower": obs[-1],
+            "mpc_horizon": self._ensure_list(mpc_horizon),
             "trajectory": {
                 "knots": self._ensure_list(knots),
                 "xs": self._ensure_list(xs),

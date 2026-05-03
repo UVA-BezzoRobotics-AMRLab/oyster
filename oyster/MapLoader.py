@@ -60,12 +60,12 @@ def parse_xml_file(xml_file, offset=0.0):
 
     return cylinder_data
 
-def generate_map_from_cylinders(cylinders, theta, dx, dy,
+def generate_map_from_cylinders(cylinders, theta=0, dx=0, dy=0,
                                 obstacle_inflation=0.30,   # meters
                                 inflation_cost=253,
                                 obstacle_cost=254, 
                                 width=1000,
-                                height=1200,
+                                height=2400,
                                 resolution=0.025,
                                 origin=np.array([-25., -15., 0.])):
     if (len(origin) != 3):

@@ -7,7 +7,8 @@ from py_mpcc import MPCCore
 from py_mpcc import vec_VecXd
 from py_mpcc import OccupancyGrid
 from py_mpcc import MPCType as Dynamics
-from py_mpcc  import MapConfig
+from py_mpcc import MapConfig
+from py_mpcc import MPCResult
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CASADI_LIB_DIR = REPO_ROOT / "build" / "acados_code_gen" / "casadi"
@@ -121,7 +122,7 @@ class RobotMPC:
         self.mpc.load_params(params)
         self.params = self.mpc.get_params()
 
-    def get_control(self, len_start):
+    def solve(self, len_start):
 
         # u = [0, 0]
         # if len_start <= self.knots[-1] - 1e-2:
@@ -147,9 +148,9 @@ class RobotMPC:
         #     u = self.mpc.solve(state, False)
         # else:
         #     print("[RobotMPC] start length exceeds maximum length")
-        u = self.mpc.solve(self.robot_state, False)
+        mpc_result = self.mpc.solve(self.robot_state, False)
 
-        return u
+        return mpc_result
 
     def get_trajectory(self):
         return self.mpc.get_trajectory()

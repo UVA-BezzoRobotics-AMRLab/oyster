@@ -89,10 +89,10 @@ def _apply_global_style():
 
 def _style_ax(ax, title="", xlabel="", ylabel="", zero_line=False):
     """Consistently style a subplot."""
-    ax.set_title(title, fontsize=9, color=TEXT_PRIMARY, pad=6,
+    ax.set_title(title, fontsize=15, color=TEXT_PRIMARY, pad=6,
                  fontweight="bold", loc="left")
-    ax.set_xlabel(xlabel, fontsize=8, color=TEXT_MUTED, labelpad=4)
-    ax.set_ylabel(ylabel, fontsize=8, color=TEXT_MUTED, labelpad=4)
+    ax.set_xlabel(xlabel, fontsize=12, color=TEXT_MUTED, labelpad=4)
+    ax.set_ylabel(ylabel, fontsize=12, color=TEXT_MUTED, labelpad=4)
     ax.tick_params(axis="both", which="both", length=3, color=BORDER)
     for spine in ax.spines.values():
         spine.set_edgecolor(BORDER)
@@ -180,7 +180,7 @@ class BarnPlotter:
                   xlabel="step", ylabel="v  (m/s)", zero_line=False)
 
         # ── Telemetry lines ─────────────────────────────────────────────────
-        lw = 1.8
+        lw = 4.0
 
         (self.alpha_upper_line,) = self.ax_alphas.plot(
             [], [], color=C_UPPER, linewidth=lw, label="α upper",
@@ -333,8 +333,8 @@ class BarnPlotter:
             ax = self.ax
         (self.traj_line,) = ax.plot(
             curve.xs, curve.ys,
-            color=TEXT_MUTED, linewidth=1.0,
-            linestyle="--", alpha=0.6, zorder=2,
+            color=TEXT_MUTED, linewidth=5.0,
+            linestyle="-", alpha=0.6, zorder=2,
             label="global path",
         )
 
@@ -554,7 +554,8 @@ class BarnPlotter:
         state      = mpc.get_state_from_horizon(0)
         u          = mpc.get_input_from_horizon(0)
         trajectory = mpc.get_trajectory()
-        len_start  = trajectory.get_closest_s(state[:2])
+        len_start  = max(trajectory.get_closest_s(state[:2]), 1e-2)
+        state[-2] = max(state[-2], 1e-2)
         adj        = trajectory.get_adjusted_traj(
             len_start, int(mpc.get_params()["REF_SAMPLES"])
         ).view()
@@ -577,3 +578,4 @@ class BarnPlotter:
         if self.save_video and self.writer is not None:
             self.writer.finish()
         plt.close("all")
+

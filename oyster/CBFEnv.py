@@ -284,6 +284,12 @@ class CBFEnv(gym.Env):
         z = np.clip(z, self.low, self.high)
         return z
 
+    def unnormalize_obs(self, z):
+        # Inverse of z = (obs - mu) / (2 * std)
+        # obs = z * (2 * std) + mu
+        obs = z * (2 * self.obs_std) + self.obs_mu
+        return obs
+
     def step(self, action):
         self.step_count += 1
 
@@ -302,7 +308,9 @@ class CBFEnv(gym.Env):
         action = action_unnormalize(
             action, self.params["MIN_ALPHA_DOT"], self.params["MAX_ALPHA_DOT"]
         )
-        # print(action)
+        # print("un-normed action", action)
+        # print("CBF_ALPHA_ABV", self.params["CBF_ALPHA_ABV"])
+        # print("CBF_ALPHA_BLW", self.params["CBF_ALPHA_BLW"])
 
         dt = self.params["DT"]
         alpha_abv = self.params["CBF_ALPHA_ABV"] + action[0] # * dt
@@ -314,7 +322,8 @@ class CBFEnv(gym.Env):
         if self.params["USE_CBF"]:
             self.mpc.load_params(self.params)
 
-        u = self.mpc.get_control(len_start)
+        solve_status = self.mpc.solve(len_start)
+        u = solve_status.command
         # print("ROBOT_STATE before:", self.robot_state)
         self.robot_state = self.mpc.apply_control(u)
         tube = self.mpc.get_tube()
@@ -330,8 +339,8 @@ class CBFEnv(gym.Env):
         self.current_ref = trajectory(len_start)
 
         obs = self.get_obs()
-        print("obs shape:", obs.shape)
-        print("mu shape:", self.obs_mu.shape)
+        # print("obs shape:", obs.shape)
+        # print("mu shape:", self.obs_mu.shape)
         # print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
@@ -349,8 +358,8 @@ class CBFEnv(gym.Env):
 
         dist = self.collision_map_util.sdf_dist(self.robot_state[0], self.robot_state[1], MapLayer.kInflated)
         self.closest_obstacle_pass = min(self.closest_obstacle_pass, dist)
-        print("dist is: ", dist)
-        print("min_dist is: ", self.closest_obstacle_pass)
+        # print("dist is: ", dist)
+        # print("min_dist is: ", self.closest_obstacle_pass)
 
         # ---------------- reward ----------------
         reward = CBFEnv.get_reward(obs, is_colliding, self.params, self.N_horizon, action)
@@ -359,11 +368,12 @@ class CBFEnv(gym.Env):
             self.step_count >= self.max_step_count
             or (len_start >= self.knots[-1] - 0.2)
             or is_colliding or abs(self.robot_state[1] - self._goal[1,0]) < 1
+            or self.closest_obstacle_pass < 0.075
         )
 
         self.total_reward += reward
         # print("step reward:", reward)
-        print("total reward:", self.total_reward)
+        # print("total reward:", self.total_reward)
         if self.plotter is not None:
             # self.plotter.log_reward(reward)
             vel = self.robot_state[3]
@@ -418,8 +428,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         params["USE_CBF"] = True
-        # params["CBF_ALPHA_ABV"] = 6
-        # params["CBF_ALPHA_BLW"] = 6
+        params["CBF_ALPHA_ABV"] = 3
+        params["CBF_ALPHA_BLW"] = 3
 
         self.set_mpc(params)
         # print("params:", params)
@@ -450,6 +460,10 @@ class CBFEnv(gym.Env):
 
         state = self.mpc.get_state_from_horizon(0)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
+        # print("traj arclen:", trajectory.get_arclen())
+        # print("len_start:", len_start)
+        # print("traj_start:", trajectory(0))
+        # print("curr_state:", state[:2])
         adjusted_traj = trajectory.get_adjusted_traj(
             len_start, int(self.mpc.get_params()["REF_SAMPLES"])
         )
@@ -463,8 +477,10 @@ class CBFEnv(gym.Env):
             state = self.mpc.get_state_from_horizon(inds[i])
             # some numerical issue is causing s state to be -1e-<large num> for some reason
             # Casadi doesnt like that so enforcing a strict positive minimum.
-            state[-2] = max(state[-2], 1e-6)
-            state[-2] = min(state[-2], adjusted_traj.get_arclen() - 1e-6)
+            state[-2] = max(state[-2], 1e-2)
+            state[-2] = min(state[-2], adjusted_traj.get_arclen() - 1e-2)
+            # print(i, "adjusted_traj.length", adjusted_traj.get_arclen())
+            # print(i, "s:", state[-2])
             u = self.mpc.get_input_from_horizon(inds[i])
             acc = u[:2]
 
@@ -488,6 +504,9 @@ class CBFEnv(gym.Env):
             cbf_blw = self.mpc.debug_fns["h_blw"](**args)
             lfh_blw = self.mpc.debug_fns["Lfh_blw"](**args)
             lghu_blw = self.mpc.debug_fns["Lghu_blw"](**args)
+
+            # print(i, "cbf_abv", cbf_abv)
+            # print(i, "cbf_blw", cbf_blw)
 
             obs[i * len(RLObs) + RLObs.CBF_ABV] = float(cbf_abv)
             obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = float(lfh_abv + lghu_abv)
@@ -513,7 +532,8 @@ class CBFEnv(gym.Env):
                 phi_r = self.mpc.debug_fns["phi_r"](**args)
 
         state = self.mpc.get_state_from_horizon(0)
-        state[4] = max(state[4], 1e-6)
+        print(state[-2])
+        # state[4] = max(state[4], 1e-2)
         u = self.mpc.get_input_from_horizon(0)
         acc = u[:2]
 
@@ -535,8 +555,13 @@ class CBFEnv(gym.Env):
 
         # print("v", [vxr, vyr])
         # print("d_abv:", self.mpc.debug_fns["d_abv"](**args))
+        # print("d_blw:", self.mpc.debug_fns["d_blw"](**args))
         # print("xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
         # print("yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+        print("s:", state[4])
+        print("s_dot:", state[5])
+        # print("signed_d:", self.mpc.debug_fns["signed_d"](**args))
+        # print("p_blw:", self.mpc.debug_fns["p_blw"](**args))
         # print("h_abv:", self.mpc.debug_fns["h_abv"](**args))
         # print("h_blw:", self.mpc.debug_fns["h_blw"](**args))
         # print("Lghu_abv", self.mpc.debug_fns["Lghu_abv"](**args))
@@ -577,7 +602,9 @@ class CBFEnv(gym.Env):
             )
 
         self.plotter.add_state_to_path(self.robot_state[:2])
+        # obs = self.get_obs()
         self.plotter.render(
+            # obs,
             self.robot_state,
             self.current_ref,
             trajectory.view(),
@@ -713,12 +740,16 @@ class CBFEnv(gym.Env):
             self.planner.set_goal(self._goal)
 
             try:
+                print("attempting to plan")
                 status = self.planner.plan(jpsPath, polys)
             except:
                 status = False
 
         if status == PlannerStatus.SUCCESS:
             self.knots, self.xs, self.ys = self.planner.get_arclen_traj(False)
+            print("knots:", self.knots)
+            print("xs:", self.xs)
+            print("ys:", self.ys)
             self.mpc.set_trajectory(
                 self.xs,
                 self.ys,
@@ -732,6 +763,7 @@ class CBFEnv(gym.Env):
             self.traj_planner_success = (
                 True if status == PlannerStatus.SUCCESS else False
             )
+
 
 
     def _plan(self, start, goal):
@@ -791,20 +823,42 @@ class RunningStats:
 def main(record_data, manual_step, task_num, world_sweep, world_num, log_data):
 
     if not record_data and not world_sweep:
-        if log_data:
-            logger = Logger()
-
-        env = CBFEnv(world_num=[world_num], manual_step=manual_step)
+        env = CBFEnv(world_num=[world_num], manual_step=manual_step, normalize_obs=False)
         env.reset_task(task_num)
+
+        if log_data:
+            titles = {
+                6: "di_1_5", 
+                7: "di_2_5", 
+                8: "uni_1_8", 
+                9: "uni_1_5", 
+            }
+            from datetime import datetime
+            now = datetime.now()
+            date_str = now.strftime("%Y_%m_%d_%H%M%S")
+            logger = Logger(f"world_{env.world_nums[0]}_{titles[task_num]}_{date_str}.json")
+
         done = False
         world_count = 0
         obs_count = 0
         if log_data:
             logger.log_static_obstacles(env.obstacles)
+            logger.log_start_and_goal(env._start, env._goal)
         while not done:
             obs, reward, done, _ = env.step([0, 0])
             if log_data:
-                logger.log_frame(env.robot_state[:3], (env.knots, env.xs, env.ys), env.upper_coeffs, env.lower_coeffs)
+                if env.dynamic_model == Dynamics.UNICYCLE:
+                    velocity = env.robot_state[3]
+                else:
+                    velocity = np.linalg.norm(env.robot_state[3:5])
+
+                horizon = env.mpc.get_horizon()
+                mpc_horizon = np.column_stack((horizon.states.xs[:], horizon.states.ys[:]))
+                logger.log_frame(
+                    env.robot_state[:3], velocity, obs,
+                    mpc_horizon, (env.knots, env.xs, env.ys), 
+                    env.upper_coeffs, env.lower_coeffs
+                )
 
             env.render()
 
