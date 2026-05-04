@@ -428,8 +428,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         params["USE_CBF"] = True
-        params["CBF_ALPHA_ABV"] = 3
-        params["CBF_ALPHA_BLW"] = 3
+        # params["CBF_ALPHA_ABV"] = 6
+        # params["CBF_ALPHA_BLW"] = 6
 
         self.set_mpc(params)
         # print("params:", params)
@@ -460,10 +460,6 @@ class CBFEnv(gym.Env):
 
         state = self.mpc.get_state_from_horizon(0)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
-        # print("traj arclen:", trajectory.get_arclen())
-        # print("len_start:", len_start)
-        # print("traj_start:", trajectory(0))
-        # print("curr_state:", state[:2])
         adjusted_traj = trajectory.get_adjusted_traj(
             len_start, int(self.mpc.get_params()["REF_SAMPLES"])
         )
@@ -477,8 +473,8 @@ class CBFEnv(gym.Env):
             state = self.mpc.get_state_from_horizon(inds[i])
             # some numerical issue is causing s state to be -1e-<large num> for some reason
             # Casadi doesnt like that so enforcing a strict positive minimum.
-            state[-2] = max(state[-2], 1e-2)
             state[-2] = min(state[-2], adjusted_traj.get_arclen() - 1e-2)
+            state[-2] = max(state[-2], 1e-2)
             # print(i, "adjusted_traj.length", adjusted_traj.get_arclen())
             # print(i, "s:", state[-2])
             u = self.mpc.get_input_from_horizon(inds[i])
@@ -532,7 +528,6 @@ class CBFEnv(gym.Env):
                 phi_r = self.mpc.debug_fns["phi_r"](**args)
 
         state = self.mpc.get_state_from_horizon(0)
-        print(state[-2])
         # state[4] = max(state[4], 1e-2)
         u = self.mpc.get_input_from_horizon(0)
         acc = u[:2]

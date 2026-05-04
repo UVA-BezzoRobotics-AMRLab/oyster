@@ -36,7 +36,7 @@ def sim_policy(
     # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[285, 140, 245], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length, N=9)
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
@@ -93,7 +93,7 @@ def sim_policy(
 
     # loop through tasks collecting rollouts
     # video_frames = []
-    outfile = "cbf_adapt_world_sweep.txt"
+    outfile = "cbf_adapt_horizon_4.txt"
     with open(outfile, "w", newline="") as f:
         f.write("Below are the simulation results for the test trials\n")
         f.write("WORLD\tTASK\tSUCCESS\tSTEPS\tLOWEST_CLEARANCE\n")

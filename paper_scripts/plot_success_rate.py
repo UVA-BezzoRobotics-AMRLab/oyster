@@ -63,7 +63,7 @@ def load_results(filepath, task_num=None):
                 steps     = int(parts[3])
                 clearance = float(parts[4])
 
-                if clearance < 0.075 or steps >= 250:
+                if clearance < 0.05 or steps >= 250:
                     success = 0
 
                 world_successes[world].append(success)
