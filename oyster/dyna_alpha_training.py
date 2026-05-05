@@ -20,6 +20,7 @@ from oyster.rlkit.launchers.launcher_util import setup_logger
 import oyster.rlkit.torch.pytorch_util as ptu
 from oyster.configs.default import default_config
 from DynamicAlphaEnv import TwoAlphaBoundsEnv
+
 # from oyster.Dynamicimport BarnEnv
 
 
@@ -160,4 +161,3 @@ def main(config, gpu, docker, debug):
 
 if __name__ == "__main__":
     main()
-

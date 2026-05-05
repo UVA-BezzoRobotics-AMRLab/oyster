@@ -37,7 +37,7 @@ def test_suite(
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
-    eval_tasks=list(tasks[-variant['n_eval_tasks']:])
+    eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
     # eval_tasks = list(tasks[: variant["n_train_tasks"]])
     print(
         "testing on {} test tasks, {} trajectories each".format(
@@ -86,7 +86,7 @@ def test_suite(
     # loop through tasks collecting rollouts
     all_rets = []
     # video_frames = []
-    with open("out.txt", 'w') as f:
+    with open("out.txt", "w") as f:
         f.write("Below are simulation trial results\n")
         f.write("trial\ttraj_id\tsteps\tsuccess\n")
 
@@ -97,7 +97,7 @@ def test_suite(
         agent.clear_z()
         paths = []
 
-        with open("out.txt", 'a') as f:
+        with open("out.txt", "a") as f:
             f.write("TASK %d\n" % (idx))
 
         for traj_id in worlds:
@@ -134,9 +134,8 @@ def test_suite(
 
                 with open("out.txt", "a") as f:
                     f.write("%d\t%d\t%d\t%d\n" % (n, traj_id, steps, success))
-                    
-            all_rets.append([sum(p["rewards"]) for p in paths])
 
+            all_rets.append([sum(p["rewards"]) for p in paths])
 
     # compute average returns across tasks
     n = min([len(a) for a in all_rets])
@@ -163,4 +162,3 @@ def main(config, path, num_trajs, deterministic, video):
 
 if __name__ == "__main__":
     main()
-

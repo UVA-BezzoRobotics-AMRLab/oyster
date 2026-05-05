@@ -7,6 +7,7 @@ from oyster.MapLoader import parse_xml_file, generate_map_from_cylinders
 from py_planner import OccupancyGrid
 from py_planner import MapLayer
 
+
 def set_world(world_num):
     try:
         obstacles = []
@@ -47,7 +48,8 @@ def set_world(world_num):
         np.array([255]),
     )
 
-    return map_util, occupancy_grid 
+    return map_util, occupancy_grid
+
 
 def main():
 
@@ -77,12 +79,11 @@ def main():
         cmap="gray_r",
         extent=(x_min, x_max, y_min, y_max),
         interpolation="nearest",
-        zorder=0,             # keep it behind everything else
+        zorder=0,  # keep it behind everything else
     )
 
-
-    x_coords = np.linspace(ox, (w-1) * res + ox, w)
-    y_coords = np.linspace(oy, (h-1) * res + oy, h)
+    x_coords = np.linspace(ox, (w - 1) * res + ox, w)
+    y_coords = np.linspace(oy, (h - 1) * res + oy, h)
 
     sdf_matrix = np.zeros((h, w))
 
@@ -91,11 +92,13 @@ def main():
         for j in range(w):
             if x_coords[j] < -4 or x_coords[j] > -0.0:
                 continue
-            if y_coords[i] <-3.0 or y_coords[i] > 5:
+            if y_coords[i] < -3.0 or y_coords[i] > 5:
                 continue
 
             start = time.time()
-            sdf_matrix[i, j] = map_util.sdf_dist(x_coords[j], y_coords[i], MapLayer.kInflated)
+            sdf_matrix[i, j] = map_util.sdf_dist(
+                x_coords[j], y_coords[i], MapLayer.kInflated
+            )
             end = time.time() - start
 
             if not first:
@@ -116,6 +119,6 @@ def main():
     plt.colorbar(sdf_im, label="distance")
     plt.show()
 
+
 if __name__ == "__main__":
     main()
-

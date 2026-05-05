@@ -38,7 +38,7 @@ def sim_policy(
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
-    eval_tasks=list(tasks[-variant['n_eval_tasks']:])
+    eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
     # eval_tasks = list(tasks[: variant["n_train_tasks"]])
     # eval_tasks=[tasks[variant['n_train_tasks']-1]]
     print(
@@ -84,7 +84,9 @@ def sim_policy(
     context_encoder.load_state_dict(
         torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"))
     )
-    policy.load_state_dict(torch.load(os.path.join(path_to_exp, f"policy_itr_{itr}.pth")))
+    policy.load_state_dict(
+        torch.load(os.path.join(path_to_exp, f"policy_itr_{itr}.pth"))
+    )
 
     # loop through tasks collecting rollouts
     all_rets = []
@@ -144,4 +146,3 @@ def main(config, path, num_trajs, deterministic, video):
 
 if __name__ == "__main__":
     main()
-

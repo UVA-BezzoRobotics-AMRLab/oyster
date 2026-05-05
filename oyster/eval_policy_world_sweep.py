@@ -18,7 +18,13 @@ from oyster.CBFEnv import CBFEnv
 
 
 def sim_policy(
-    variant, path_to_exp, world_num=0, num_trajs=1, deterministic=False, save_video=False, manual_step=False
+    variant,
+    path_to_exp,
+    world_num=0,
+    num_trajs=1,
+    deterministic=False,
+    save_video=False,
+    manual_step=False,
 ):
     """
     simulate a trained policy adapting to a new task
@@ -36,14 +42,20 @@ def sim_policy(
     # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[285, 140, 245], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length, N=9)
+    env = CBFEnv(
+        world_num=[world_num],
+        manual_step=manual_step,
+        save_video=save_video,
+        max_step_count=max_path_length,
+        N=9,
+    )
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
     # N = 0
-    eval_tasks=list(tasks[-variant['n_eval_tasks']:])
+    eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
     # eval_tasks=list([tasks[-1]])
     print(
         "testing on {} test tasks, {} trajectories each".format(
@@ -85,11 +97,18 @@ def sim_policy(
 
     # load trained weights (otherwise simulate random policy)
     itr = 74
-    cpu_device = None if torch.cuda.is_available() else torch.device('cpu')
+    cpu_device = None if torch.cuda.is_available() else torch.device("cpu")
     context_encoder.load_state_dict(
-        torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"), map_location=cpu_device)
+        torch.load(
+            os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"),
+            map_location=cpu_device,
+        )
     )
-    policy.load_state_dict(torch.load(os.path.join(path_to_exp, f"policy_itr_{itr}.pth"), map_location=cpu_device))
+    policy.load_state_dict(
+        torch.load(
+            os.path.join(path_to_exp, f"policy_itr_{itr}.pth"), map_location=cpu_device
+        )
+    )
 
     # loop through tasks collecting rollouts
     # video_frames = []
@@ -134,7 +153,6 @@ def sim_policy(
                     agent.infer_posterior(agent.context)
 
 
-
 @click.command()
 @click.argument("config", default=None)
 @click.argument("path", default=None)
@@ -154,4 +172,3 @@ def main(config, path, world_num, num_trajs, stochastic, video, manual_step):
 
 if __name__ == "__main__":
     main()
-

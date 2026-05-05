@@ -75,7 +75,7 @@ class TubeGenerator:
         prob_p.solve(solver=cp.CLARABEL)
         prob_n.solve(solver=cp.CLARABEL)
 
-        if prob_p.status != 'optimal' or prob_n.status != 'optimal':
+        if prob_p.status != "optimal" or prob_n.status != "optimal":
             return None, None
 
         self.coeffs_p = x_p.value
@@ -112,8 +112,6 @@ class TubeGenerator:
                 constraints.append(poly >= d_min)
                 constraints.append(poly <= d_max)
 
-
-
         for i in range(n_constraints):
             di = d_parallel[i]
             dpi = d_perp[i]
@@ -145,7 +143,7 @@ class TubeGenerator:
         return shifted_coeffs_x, shifted_coeffs_y
 
     def get_max_width(self):
-        #not sure if this is faster than solving the polynomial roots directly
+        # not sure if this is faster than solving the polynomial roots directly
         ss = np.linspace(0, self.curve_len, 100)
         abv_dists = np.polyval(self.coeffs_p[::-1], ss)
         blw_dists = np.polyval(self.coeffs_n[::-1], ss)

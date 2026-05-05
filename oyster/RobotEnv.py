@@ -24,7 +24,13 @@ class RobotEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
     def __init__(
-        self, task={}, n_tasks=2, randomize_tasks=False, n_obs=100, traj_id=None, randomize_traj=False
+        self,
+        task={},
+        n_tasks=2,
+        randomize_tasks=False,
+        n_obs=100,
+        traj_id=None,
+        randomize_traj=False,
     ):
 
         super(RobotEnv, self).__init__()
@@ -166,7 +172,7 @@ class RobotEnv(gym.Env):
             len_start, self.params["REF_LENGTH"], self.params["TUBE_DEGREE"]
         )
 
-        # mpc expects the coeffs in the opposite order :) 
+        # mpc expects the coeffs in the opposite order :)
         self.mpc.set_tubes(upper_coeffs[::-1], lower_coeffs[::-1])
 
         action[0] = action_unnormalize(
@@ -232,7 +238,7 @@ class RobotEnv(gym.Env):
         v_max = self.params["LINVEL"]
         solver_status = self.mpc.get_solver_status()
         mpc_state = self.mpc.get_mpc_state()
-        progress = mpc_state[5] / np.sqrt(2 * v_max **2)
+        progress = mpc_state[5] / np.sqrt(2 * v_max**2)
 
         return (
             obs,
@@ -322,8 +328,8 @@ class RobotEnv(gym.Env):
 
         # schedule trajectories for curriculum learning
         if self.epoch != 0 and self.epoch_incremented:
-            if(
-                self.epoch >= self.traj_schedule[0] 
+            if (
+                self.epoch >= self.traj_schedule[0]
                 and self.epoch % self.traj_schedule[1] == 0
             ):
 
@@ -374,16 +380,26 @@ class RobotEnv(gym.Env):
             len_start, self.params["REF_LENGTH"], self.params["TUBE_DEGREE"]
         )
 
-        # technically maximum distance is sum of both... 
+        # technically maximum distance is sum of both...
         max_width = self.tube_gen.get_max_width()
 
-        remaining_len = min(self.curve.get_arclen() - len_start, self.params["REF_LENGTH"])
+        remaining_len = min(
+            self.curve.get_arclen() - len_start, self.params["REF_LENGTH"]
+        )
         obs[2] = normalize(np.polyval(upper_coeffs, 0), 0, max_width)
         obs[3] = normalize(np.polyval(lower_coeffs, 0), 0, max_width)
-        obs[4] = normalize(np.polyval(upper_coeffs, min(.25, remaining_len)), 0, max_width)
-        obs[5] = normalize(np.polyval(lower_coeffs, min(.25, remaining_len)), 0, max_width)
-        obs[6] = normalize(np.polyval(upper_coeffs, min(.5, remaining_len)), 0, max_width)
-        obs[7] = normalize(np.polyval(lower_coeffs, min(.5, remaining_len)), 0, max_width)
+        obs[4] = normalize(
+            np.polyval(upper_coeffs, min(0.25, remaining_len)), 0, max_width
+        )
+        obs[5] = normalize(
+            np.polyval(lower_coeffs, min(0.25, remaining_len)), 0, max_width
+        )
+        obs[6] = normalize(
+            np.polyval(upper_coeffs, min(0.5, remaining_len)), 0, max_width
+        )
+        obs[7] = normalize(
+            np.polyval(lower_coeffs, min(0.5, remaining_len)), 0, max_width
+        )
 
         # print("curr dist up:", np.polyval(upper_coeffs, 0))
         # print("MAX_WIDTH:", max_width)
@@ -429,7 +445,6 @@ class RobotEnv(gym.Env):
         a_min = params["MIN_ALPHA"]
         avg = (a_max + a_min) / 2.0
 
-
         # mpc_failed = bool(obs[12])
         # weights
         w_feas = 30
@@ -454,7 +469,6 @@ class RobotEnv(gym.Env):
 
         # reg_abv = action[0] ** 2
         # reg_blw = action[1] ** 2
-
 
         reward = float(
             # w_safety * safety_abv

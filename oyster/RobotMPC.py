@@ -21,9 +21,12 @@ def _unwrap(out):
         if not vals[0].is_scalar():
             return vals[0]
 
-        return float(vals[0]) if len(vals) == 1 else np.concatenate(
-            [np.asarray(v).ravel() for v in vals]
+        return (
+            float(vals[0])
+            if len(vals) == 1
+            else np.concatenate([np.asarray(v).ravel() for v in vals])
         )
+
 
 def load_casadi_functions(mpc_type):
 
@@ -34,7 +37,7 @@ def load_casadi_functions(mpc_type):
         so_file = "libcasadi_unicycle_model_mpcc_internals.so"
 
     fn_names = [
-        "xr", 
+        "xr",
         "yr",
         "xr_dot",
         "yr_dot",
@@ -45,9 +48,9 @@ def load_casadi_functions(mpc_type):
         "p_abv",
         "p_blw",
         "d_abv",
-        "d_blw", 
+        "d_blw",
         "h_abv",
-        "h_blw", 
+        "h_blw",
         "Lfh_abv",
         "Lfh_blw",
         "Lghu_abv",
@@ -70,13 +73,13 @@ def load_casadi_functions(mpc_type):
 
     return fns
 
+
 class RobotMPC:
 
     def __init__(self, init_pos, params):
 
-        self.dyn_model = params["DYNAMIC_MODEL"]
+        self.dyn_model = params.input_type
         print("dynamic model: ", self.dyn_model)
-
 
         # robot state: x, y, vx, vy
         self.robot_state = np.zeros(4, dtype=np.float64)
@@ -85,15 +88,15 @@ class RobotMPC:
         if self.dyn_model == Dynamics.UNICYCLE:
             self.robot_state[2] = init_pos[2]
 
-        self.dt = params["DT"]
-        self.v_max = params["LINVEL"]
-        self.ref_len = params["REF_LENGTH"]
+        self.dt = params.dt
+        self.v_max = params.constraints.max_linvel
+        self.ref_len = params.ref_length
 
         self.prev_s = 0.0
 
         # self.mpc = MPCCore(Dynamics.DOUBLE_INTEGRATOR)
-        self.mpc = MPCCore(self.dyn_model)
-        self.mpc.load_params(params)
+        self.mpc = MPCCore(params)
+        # self.mpc.load_params(params)
         self.params = self.mpc.get_params()
 
         self.debug_fns = load_casadi_functions(self.dyn_model)
@@ -203,7 +206,6 @@ class RobotMPC:
 
         return self.robot_state
 
-
     def get_len_start(self):
         return self.mpc.get_s_from_pose()
 
@@ -256,7 +258,6 @@ class RobotMPC:
 
         return horizon.get_state_at_step(ind)
 
-
     def get_input_from_horizon(self, ind):
         horizon = self.mpc.get_horizon()
         # input_ = [
@@ -270,12 +271,11 @@ class RobotMPC:
     def get_tube(self):
         return self.mpc.get_tube()
 
-
     def _di_to_uni_cmd_mapper(self, state, u, kp=10.0):
 
         params = self.get_params()
-        v_max = params["LINVEL"]
-        w_max = params["ANGVEL"]
+        v_max = params.constraints.max_linvel
+        w_max = params.constraints.max_angvel
 
         theta_v = np.arctan2(u[1], u[0])
         error = theta_v - state[2]

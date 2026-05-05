@@ -9,11 +9,13 @@ from lxml import etree
 ENV_Y = 12
 ENV_X = 4
 
+
 class Pose:
 
     def __init__(self):
         self.position = np.array([])
         self.orientation = np.array([])
+
 
 class OccInfo:
 
@@ -22,6 +24,7 @@ class OccInfo:
         self.height = 0
         self.resolution = 0
         self.origin = Pose()
+
 
 class OccupancyGrid:
 
@@ -60,15 +63,21 @@ def parse_xml_file(xml_file, offset=0.0):
 
     return cylinder_data
 
-def generate_map_from_cylinders(cylinders, theta=0, dx=0, dy=0,
-                                obstacle_inflation=0.30,   # meters
-                                inflation_cost=253,
-                                obstacle_cost=254, 
-                                width=1000,
-                                height=2400,
-                                resolution=0.025,
-                                origin=np.array([-25., -15., 0.])):
-    if (len(origin) != 3):
+
+def generate_map_from_cylinders(
+    cylinders,
+    theta=0,
+    dx=0,
+    dy=0,
+    obstacle_inflation=0.30,  # meters
+    inflation_cost=253,
+    obstacle_cost=254,
+    width=1000,
+    height=2400,
+    resolution=0.025,
+    origin=np.array([-25.0, -15.0, 0.0]),
+):
+    if len(origin) != 3:
         print("origin does not have proper dimension (3)")
         return None
 
@@ -86,8 +95,7 @@ def generate_map_from_cylinders(cylinders, theta=0, dx=0, dy=0,
 
     grid.data = [0] * grid.info.width * grid.info.height
 
-    R = np.array([[np.cos(theta), -np.sin(theta)],
-                  [np.sin(theta),  np.cos(theta)]])
+    R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
 
     for cylinder in cylinders:
         x, y, radius = cylinder
@@ -102,12 +110,17 @@ def generate_map_from_cylinders(cylinders, theta=0, dx=0, dy=0,
         r_inf_cells = int((radius + obstacle_inflation) / grid.info.resolution)
 
         for gx in range(grid_x_center - r_inf_cells, grid_x_center + r_inf_cells + 1):
-            for gy in range(grid_y_center - r_inf_cells, grid_y_center + r_inf_cells + 1):
+            for gy in range(
+                grid_y_center - r_inf_cells, grid_y_center + r_inf_cells + 1
+            ):
 
                 if not (0 <= gx < grid.info.width and 0 <= gy < grid.info.height):
                     continue
 
-                dist = math.sqrt((gx - grid_x_center)**2 + (gy - grid_y_center)**2) * grid.info.resolution
+                dist = (
+                    math.sqrt((gx - grid_x_center) ** 2 + (gy - grid_y_center) ** 2)
+                    * grid.info.resolution
+                )
 
                 idx = gy * grid.info.width + gx
 

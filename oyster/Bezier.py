@@ -4,7 +4,17 @@ from scipy.interpolate import UnivariateSpline
 
 
 class BezierCurve:
-    def __init__(self, p0=None, p1=None, p2=None, p3=None, knots=None, xs=None, ys=None, n_samples=20):
+    def __init__(
+        self,
+        p0=None,
+        p1=None,
+        p2=None,
+        p3=None,
+        knots=None,
+        xs=None,
+        ys=None,
+        n_samples=20,
+    ):
         if p0 is not None:
             self.p0 = np.array(p0, dtype=float).flatten()
             self.p1 = np.array(p1, dtype=float).flatten()
@@ -25,13 +35,13 @@ class BezierCurve:
         self.trajx_d = self.trajx.derivative(n=1)
         self.trajy_d = self.trajy.derivative(n=1)
 
-        self.pts = self.pos(np.linspace(0,self.knots[-1],200))
+        self.pts = self.pos(np.linspace(0, self.knots[-1], 200))
 
     def pos(self, s):
         """Position on curve at param s ∈ [0,len]"""
         x = self.trajx(s)
         y = self.trajy(s)
-        return np.stack([x,y], axis=-1)
+        return np.stack([x, y], axis=-1)
 
     def vel(self, s):
         return np.array([self.trajx_d(s), self.trajy_d(s)])
@@ -39,7 +49,7 @@ class BezierCurve:
     def heading(self, s):
         v = self.vel(s)
         mag = np.linalg.norm(self.vel(s))
-        return np.arctan2(v[1], v[0]) if mag > 1e-3 else 0.
+        return np.arctan2(v[1], v[0]) if mag > 1e-3 else 0.0
 
     def _pos(self, t):
         """Position on curve at param t ∈ [0,1]"""
@@ -69,9 +79,8 @@ class BezierCurve:
         """Derivative wrt t"""
         is_scalar = np.isscalar(t)
         t = np.atleast_1d(t)[..., None]
-        a = (
-            6 * (1 - t) * (self.p2 - 2*self.p1 + self.p0)
-            + 6 * t * (self.p3 - 2*self.p2 + self.p1)
+        a = 6 * (1 - t) * (self.p2 - 2 * self.p1 + self.p0) + 6 * t * (
+            self.p3 - 2 * self.p2 + self.p1
         )
         return a.flatten() if is_scalar else a
 
@@ -133,7 +142,7 @@ class BezierCurve:
         ks = np.abs(cross) / np.linalg.norm(vels, axis=1) ** 3
 
         return np.max(ks)
- 
+
     def compute_adjusted_ref(
         self,
         s,
