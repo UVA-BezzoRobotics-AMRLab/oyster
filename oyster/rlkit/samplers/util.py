@@ -1,4 +1,5 @@
 import numpy as np
+from oyster.RobotMPC import RobotMPC, Dynamics
 
 
 def rollout(
@@ -8,6 +9,7 @@ def rollout(
     accum_context=True,
     animated=False,
     save_frames=False,
+    logger=None,
 ):
     """
     The following value for the following keys will be a 2D array, with the
@@ -46,6 +48,25 @@ def rollout(
     while path_length < max_path_length:
         a, agent_info = agent.get_action(o)
         next_o, r, d, env_info = env.step(a)
+        if logger != None:
+            if env.dynamic_model == Dynamics.UNICYCLE:
+                velocity = env.robot_state[3]
+            else:
+                velocity = np.linalg.norm(env.robot_state[2:4])
+
+            horizon = env.mpc.get_horizon()
+            mpc_horizon = np.column_stack((horizon.states.xs[:], horizon.states.ys[:]))
+            tube_upper_pts, tube_lower_pts = env._compute_tube_pts()
+            logger.log_frame(
+                env.robot_state[:3],
+                velocity,
+                env.unnormalize_obs(next_o),
+                mpc_horizon, 
+                (env.knots, env.xs, env.ys), 
+                tube_upper_pts,
+                tube_lower_pts,
+            )
+
         # update the agent's current context
         if accum_context:
             agent.update_context([o, a, r, next_o, d, env_info])
