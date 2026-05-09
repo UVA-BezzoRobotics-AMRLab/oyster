@@ -8,7 +8,9 @@ import numpy as np
 
 from enum import IntEnum, auto
 from gymnasium import spaces
-from oyster.BarnPlotter import BarnPlotter
+
+# from oyster.BarnPlotter import BarnPlotter
+from oyster.replay import ReplayPlotter
 from oyster.Planner import PyPlanner
 from oyster.Bezier import BezierCurve
 from oyster.ParamLoader import ParameterLoader
@@ -152,7 +154,6 @@ class CBFEnv(gym.Env):
             self.obstacles = []
             # offsets = [-5, 3]
             offsets = [-5 + 8 * i for i in range(len(world_num))]
-            print(world_num)
             for i, world in enumerate(world_num):
                 print(i)
                 path = os.path.join(
@@ -187,8 +188,9 @@ class CBFEnv(gym.Env):
             np.array([255]),
         )
 
-        self.collision_occupancy_grid = generate_map_from_cylinders(self.obstacles, 0, 0, 0, 
-                                                                    obstacle_inflation = 0.25)
+        self.collision_occupancy_grid = generate_map_from_cylinders(
+            self.obstacles, 0, 0, 0, obstacle_inflation=0.25
+        )
         self.collision_map_util = OccupancyGrid(
             self.collision_occupancy_grid.info.width,
             self.collision_occupancy_grid.info.height,
@@ -220,28 +222,28 @@ class CBFEnv(gym.Env):
         obs_mu = np.zeros(obs_mu_single.shape[0] * N_horizon + N_alpha + 1)
         obs_std = np.zeros(obs_std_single.shape[0] * N_horizon + N_alpha + 1)
 
-        obs_mu[:-N_alpha-1] = np.tile(obs_mu_single, N_horizon)
-        obs_std[:-N_alpha-1] = np.tile(obs_std_single, N_horizon)
+        obs_mu[: -N_alpha - 1] = np.tile(obs_mu_single, N_horizon)
+        obs_std[: -N_alpha - 1] = np.tile(obs_std_single, N_horizon)
 
-        obs_mu[len(RLObs) * N_horizon] = params["LINVEL"] / 2
-        obs_std[len(RLObs) * N_horizon] = params["LINVEL"] / 4
+        obs_mu[len(RLObs) * N_horizon] = params.constraints.max_linvel / 2
+        obs_std[len(RLObs) * N_horizon] = params.constraints.max_linvel / 4
 
         for i in range(N_alpha):
             obs_mu[len(RLObs) * N_horizon + i + 1] = (
-                params["MIN_ALPHA"] + params["MAX_ALPHA"]
+                params.cbf.min_alpha + params.cbf.max_alpha
             ) / 2
 
         for i in range(N_alpha):
             obs_std[len(RLObs) * N_horizon + i + 1] = (
-                params["MIN_ALPHA"] + params["MAX_ALPHA"]
+                params.cbf.min_alpha + params.cbf.max_alpha
             ) / 4
 
         return obs_mu, obs_std
 
     def set_mpc(self, params):
 
-        self.params = copy.deepcopy(params)
-        self.dynamic_model = self.params["DYNAMIC_MODEL"]
+        self.params = params
+        self.dynamic_model = self.params.input_type
         # self.params["USE_CBF"] = True
 
         init_theta = np.atan2(
@@ -256,12 +258,12 @@ class CBFEnv(gym.Env):
         # self.mpc.set_occ_map(occ)
         self.robot_state = self.mpc.get_robot_state()
 
-        self.upper_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
-        self.upper_coeffs[0] = self.params["MAX_TUBE_WIDTH"] / 2.0
-        self.lower_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
-        self.lower_coeffs[0] = -self.params["MAX_TUBE_WIDTH"] / 2.0
+        self.upper_coeffs = np.array([0] * (self.params.tube.poly_degree + 1))
+        self.upper_coeffs[0] = self.params.tube.max_width / 2.0
+        self.lower_coeffs = np.array([0] * (self.params.tube.poly_degree + 1))
+        self.lower_coeffs[0] = -self.params.tube.max_width / 2.0
 
-        if not self.params["USE_CBF"]:
+        if not self.params.cbf.use_cbf:
             self.upper_coeffs[0] = 100
             self.lower_coeffs[0] = -100
 
@@ -306,21 +308,21 @@ class CBFEnv(gym.Env):
         action = np.array(action)
         # print("normalized",action)
         action = action_unnormalize(
-            action, self.params["MIN_ALPHA_DOT"], self.params["MAX_ALPHA_DOT"]
+            action, self.params.cbf.min_alpha_dot, self.params.cbf.max_alpha_dot
         )
         # print("un-normed action", action)
         # print("CBF_ALPHA_ABV", self.params["CBF_ALPHA_ABV"])
         # print("CBF_ALPHA_BLW", self.params["CBF_ALPHA_BLW"])
 
-        dt = self.params["DT"]
-        alpha_abv = self.params["CBF_ALPHA_ABV"] + action[0] # * dt
-        alpha_blw = self.params["CBF_ALPHA_BLW"] + action[1] # * dt
+        dt = self.params.dt
+        alpha_abv = self.params.cbf.alpha_abv + action[0]  # * dt
+        alpha_blw = self.params.cbf.alpha_blw + action[1]  # * dt
 
-        self.params["CBF_ALPHA_ABV"] = alpha_abv
-        self.params["CBF_ALPHA_BLW"] = alpha_blw
+        self.params.cbf.alpha_abv = alpha_abv
+        self.params.cbf.alpha_blw = alpha_blw
 
-        if self.params["USE_CBF"]:
-            self.mpc.load_params(self.params)
+        # if self.params.cbf.use_cbf:
+        #     self.mpc.load_params(self.params)
 
         solve_status = self.mpc.solve(len_start)
         u = solve_status.command
@@ -328,7 +330,7 @@ class CBFEnv(gym.Env):
         self.robot_state = self.mpc.apply_control(u)
         tube = self.mpc.get_tube()
 
-        if self.params["USE_CBF"]:
+        if self.params.cbf.use_cbf:
             self.upper_coeffs = tube[0].get_coeffs()
             self.lower_coeffs = tube[1].get_coeffs()
 
@@ -344,7 +346,7 @@ class CBFEnv(gym.Env):
         # print("obs:", obs)
         # print("obs:", self.normalize_obs(obs))
 
-        v_max = self.params["LINVEL"]
+        v_max = self.params.constraints.max_linvel
 
         is_colliding = False
         try:
@@ -356,18 +358,23 @@ class CBFEnv(gym.Env):
 
         self.did_collide = is_colliding
 
-        dist = self.collision_map_util.sdf_dist(self.robot_state[0], self.robot_state[1], MapLayer.kInflated)
+        dist = self.collision_map_util.sdf_dist(
+            self.robot_state[0], self.robot_state[1], MapLayer.kInflated
+        )
         self.closest_obstacle_pass = min(self.closest_obstacle_pass, dist)
         # print("dist is: ", dist)
         # print("min_dist is: ", self.closest_obstacle_pass)
 
         # ---------------- reward ----------------
-        reward = CBFEnv.get_reward(obs, is_colliding, self.params, self.N_horizon, action)
+        reward = CBFEnv.get_reward(
+            obs, is_colliding, self.params, self.N_horizon, action
+        )
 
         is_done = (
             self.step_count >= self.max_step_count
             or (len_start >= self.knots[-1] - 0.2)
-            or is_colliding or abs(self.robot_state[1] - self._goal[1,0]) < 1
+            or is_colliding
+            or abs(self.robot_state[1] - self._goal[1, 0]) < 1
             or self.closest_obstacle_pass < 0.075
         )
 
@@ -379,7 +386,7 @@ class CBFEnv(gym.Env):
             vel = self.robot_state[3]
             if self.dynamic_model == Dynamics.DOUBLE_INTEGRATOR:
                 vel = np.linalg.norm(self.robot_state[2:4])
-            self.plotter.log_reward(vel)
+            # self.plotter.log_reward(vel)
 
         return (
             self.normalize_obs(obs) if self.should_normalize else obs,
@@ -398,9 +405,9 @@ class CBFEnv(gym.Env):
         if self.plotter:
             self.plotter.close()
 
-        params = copy.deepcopy(self.task_loader[self.task_idx])
-        min_alpha = params["MIN_ALPHA"]
-        max_alpha = params["MAX_ALPHA"]
+        params = self.task_loader[self.task_idx].copy()
+        min_alpha = params.cbf.min_alpha
+        max_alpha = params.cbf.max_alpha
 
         self._goal = np.zeros((3, 4))
         self._goal[:2, 0] = [-2.25, -2.5]
@@ -412,8 +419,8 @@ class CBFEnv(gym.Env):
         self._start = tmp
 
         if self.epoch >= self.traj_schedule[0]:
-            params["CBF_ALPHA_ABV"] = np.random.uniform(min_alpha, max_alpha)
-            params["CBF_ALPHA_BLW"] = np.random.uniform(min_alpha, max_alpha)
+            params.cbf.alpha_abv = np.random.uniform(min_alpha, max_alpha)
+            params.cbf.alpha_blw = np.random.uniform(min_alpha, max_alpha)
 
             # randomly swap the two goals...
             r = np.random.randint(2)
@@ -427,9 +434,9 @@ class CBFEnv(gym.Env):
             world_num = self.worlds[delta // self.traj_schedule[1]]
             self.set_world([world_num])
 
-        params["USE_CBF"] = True
-        # params["CBF_ALPHA_ABV"] = 6
-        # params["CBF_ALPHA_BLW"] = 6
+        params.cbf.use_cbf = True
+        # params.cbf.alpha_abv = 3.0
+        # params.cbf.alpha_blw = 3.0
 
         self.set_mpc(params)
         # print("params:", params)
@@ -442,7 +449,7 @@ class CBFEnv(gym.Env):
         # print(self.normalize_obs)
 
         obs = np.zeros(self.state_dim, dtype=np.float64)
-        obs[-self.N_alpha :] = [params["CBF_ALPHA_ABV"], params["CBF_ALPHA_BLW"]]
+        obs[-self.N_alpha :] = [params.cbf.alpha_abv, params.cbf.alpha_blw]
         return self.normalize_obs(obs) if self.should_normalize else obs
 
     def get_obs(self):
@@ -461,7 +468,7 @@ class CBFEnv(gym.Env):
         state = self.mpc.get_state_from_horizon(0)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
         adjusted_traj = trajectory.get_adjusted_traj(
-            len_start, int(self.mpc.get_params()["REF_SAMPLES"])
+            len_start, int(self.mpc.get_params().ref_samples)
         )
         xs = adjusted_traj.get_ctrls_x()
         ys = adjusted_traj.get_ctrls_y()
@@ -487,9 +494,9 @@ class CBFEnv(gym.Env):
                 "i3": ys,
                 "i4": self.upper_coeffs,
                 "i5": self.lower_coeffs,
-                "i6": self.params["CLF_W_LAG"],
-                "i7": self.params["CLF_W_CONTOUR"],
-                "i8": self.params["CLF_GAMMA"],
+                "i6": self.params.clf.w_lag_e,
+                "i7": self.params.clf.w_contour_e,
+                "i8": self.params.clf.gamma,
                 "i9": adjusted_traj.get_arclen(),
             }
 
@@ -539,9 +546,9 @@ class CBFEnv(gym.Env):
             "i3": ys,
             "i4": self.upper_coeffs,
             "i5": self.lower_coeffs,
-            "i6": self.params["CLF_W_LAG"],
-            "i7": self.params["CLF_W_CONTOUR"],
-            "i8": self.params["CLF_GAMMA"],
+            "i6": self.params.clf.w_lag_e,
+            "i7": self.params.clf.w_contour_e,
+            "i8": self.params.clf.gamma,
             "i9": adjusted_traj.get_arclen(),
         }
 
@@ -564,8 +571,8 @@ class CBFEnv(gym.Env):
 
         obs[-self.N_alpha - 1] = float(state[-1])
         obs[-self.N_alpha :] = [
-            self.params["CBF_ALPHA_ABV"],
-            self.params["CBF_ALPHA_BLW"],
+            self.params.cbf.alpha_abv,
+            self.params.cbf.alpha_blw,
         ]
         return obs
 
@@ -584,29 +591,67 @@ class CBFEnv(gym.Env):
         # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.params["REF_LENGTH"])
         # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_trajectory().get_arclen() + 2)
         if self.plotter is None:
-            self.plotter = BarnPlotter(
-                trajectory.view(),
-                self.occupancy_grid,
-                self.map_util,
-                self.upper_coeffs,
-                self.lower_coeffs,
-                self.mpc,
-                self.dynamic_model,
-                0.1,
-                save_video=self.save_video,
-            )
+            meta_data = {
+                "model": (
+                    "Unicycle"
+                    if self.params.input_type == Dynamics.UNICYCLE
+                    else "Double Integrator"
+                ),
+                "max_speed": self.params.constraints.max_linvel,
+            }
 
-        self.plotter.add_state_to_path(self.robot_state[:2])
+            self.plotter = ReplayPlotter.live(
+                fps=30,
+                meta_data=meta_data,
+                start_pos=self._start[:2, 0],
+                goal_pos=self._goal[:2, 0],
+                obstacles=self.obstacles,
+            )
+            # self.plotter = BarnPlotter(
+            #     trajectory.view(),
+            #     self.occupancy_grid,
+            #     self.map_util,
+            #     self.upper_coeffs,
+            #     self.lower_coeffs,
+            #     self.mpc,
+            #     self.dynamic_model,
+            #     0.1,
+            #     save_video=self.save_video,
+            # )
+
+        # self.plotter.add_state_to_path(self.robot_state[:2])
         # obs = self.get_obs()
-        self.plotter.render(
-            # obs,
-            self.robot_state,
-            self.current_ref,
-            trajectory.view(),
-            self.mpc,
-            self.upper_coeffs,
-            self.lower_coeffs,
+        velocity = (
+            self.robot_state[3]
+            if self.dynamic_model == Dynamics.UNICYCLE
+            else np.linalg.norm(self.robot_state[3:5])
         )
+        horizon = self.mpc.get_horizon()
+        mpc_horizon = np.column_stack((horizon.states.xs[:], horizon.states.ys[:]))
+
+        # compute tube points and pass them in
+        tube_upper_pts, tube_lower_pts = self._compute_tube_pts()
+
+        frame = Logger.generate_json_frame(
+            self.robot_state[:3],
+            velocity,
+            self.get_obs(),
+            mpc_horizon,
+            (self.knots, self.xs, self.ys),
+            tube_upper_pts,
+            tube_lower_pts,
+        )
+        self.plotter.push_frame(frame)
+
+        # self.plotter.render(
+        #     # obs,
+        #     self.robot_state,
+        #     self.current_ref,
+        #     trajectory.view(),
+        #     self.mpc,
+        #     self.upper_coeffs,
+        #     self.lower_coeffs,
+        # )
 
         if self.manual_step:
             a = input()
@@ -659,7 +704,7 @@ class CBFEnv(gym.Env):
         #     (np.log(2) / k) - (1.0 / k) * np.log1p(np.exp(k * (-worst_const)))
         # )
 
-        reward += 0.1*np.tanh(worst_const * 5.0)
+        reward += 0.1 * np.tanh(worst_const * 5.0)
         # print("min_const", worst_const)
         # print("constraint:", reward)
         # print("constraint", np.clip(.5 * constraint_reward, -.5, .2))
@@ -668,22 +713,22 @@ class CBFEnv(gym.Env):
         # --------------------------------------------------
         # 4. Progress reward
         # --------------------------------------------------
-        s_dot = obs[-3] / params["LINVEL"]
+        s_dot = obs[-3] / params.constraints.max_linvel
         # print("sdot", 0.1 * (1-s_dot))
-        reward -= 0.2 * (1-s_dot)
+        reward -= 0.2 * (1 - s_dot)
 
         # --------------------------------------------------
-        # 5. Alpha bounds 
+        # 5. Alpha bounds
         # --------------------------------------------------
-        avg = 0.5 * (params["MIN_ALPHA"] + params["MAX_ALPHA"])
+        avg = 0.5 * (params.cbf.min_alpha + params.cbf.max_alpha)
         alphas = (obs[-2:] - avg) / avg
         d = np.minimum(alphas + 1.0, 1.0 - alphas)
 
         # print("alpha bounds", -.005* np.sum((d[d < 0])**2))
-        reward -= .005 * np.sum((d[d < 0])**2)
+        reward -= 0.005 * np.sum((d[d < 0]) ** 2)
 
         # print("regularization:", -.0005 * np.linalg.norm(action))
-        reward -= .0005 * np.linalg.norm(action)
+        reward -= 0.0005 * np.linalg.norm(action)
         # print("total reward", reward)
 
         # --------------------------------------------------
@@ -759,7 +804,34 @@ class CBFEnv(gym.Env):
                 True if status == PlannerStatus.SUCCESS else False
             )
 
+    def _compute_tube_pts(self):
+        trajectory = self.mpc.get_trajectory()
+        len_start = trajectory.get_closest_s(self.robot_state[:2])
+        adjusted_traj = trajectory.get_adjusted_traj(
+            len_start, int(self.mpc.get_params().ref_samples)
+        )
+        traj_view = adjusted_traj.view()
+        xs, ys = traj_view.xs, traj_view.ys
 
+        extended_len = adjusted_traj.get_arclen()
+        true_length = self.mpc.get_non_extended_trajectory().get_arclen()
+
+        tau = np.linspace(0, true_length, 100)
+
+        upper_d = np.polyval(self.upper_coeffs[::-1], tau / extended_len)
+        lower_d = np.polyval(self.lower_coeffs[::-1], tau / extended_len)
+        print("EXETENDED LENGTH:", extended_len)
+
+        ss = np.linspace(0, true_length, 100)
+        traj = np.vstack([adjusted_traj(s) for s in ss])
+        tangents = np.vstack([adjusted_traj(s, 1) for s in ss])
+        tangents /= np.linalg.norm(tangents, axis=1, keepdims=True)
+        normals = np.column_stack([-tangents[:, 1], tangents[:, 0]])
+
+        upper = traj + upper_d[:, None] * normals
+        lower = traj + lower_d[:, None] * normals
+
+        return upper, lower
 
     def _plan(self, start, goal):
 
@@ -818,27 +890,34 @@ class RunningStats:
 def main(record_data, manual_step, task_num, world_sweep, world_num, log_data):
 
     if not record_data and not world_sweep:
-        env = CBFEnv(world_num=[world_num], manual_step=manual_step, normalize_obs=False)
+        env = CBFEnv(
+            world_num=[world_num], manual_step=manual_step, normalize_obs=False
+        )
         env.reset_task(task_num)
 
         if log_data:
             titles = {
-                6: "di_1_5", 
-                7: "di_2_5", 
-                8: "uni_1_8", 
-                9: "uni_1_5", 
+                6: "di_1_5",
+                7: "di_2_5",
+                8: "uni_1_8",
+                9: "uni_1_5",
             }
             from datetime import datetime
+
             now = datetime.now()
             date_str = now.strftime("%Y_%m_%d_%H%M%S")
-            logger = Logger(f"world_{env.world_nums[0]}_{titles[task_num]}_{date_str}.json")
+            logger = Logger(
+                f"world_{env.world_nums[0]}_{titles[task_num]}_{date_str}.json"
+            )
 
         done = False
         world_count = 0
         obs_count = 0
         if log_data:
+            logger.log_world_nums(env.world_nums)
             logger.log_static_obstacles(env.obstacles)
             logger.log_start_and_goal(env._start, env._goal)
+            logger.log_meta_data(env.params)
         while not done:
             obs, reward, done, _ = env.step([0, 0])
             if log_data:
@@ -848,11 +927,19 @@ def main(record_data, manual_step, task_num, world_sweep, world_num, log_data):
                     velocity = np.linalg.norm(env.robot_state[3:5])
 
                 horizon = env.mpc.get_horizon()
-                mpc_horizon = np.column_stack((horizon.states.xs[:], horizon.states.ys[:]))
+                mpc_horizon = np.column_stack(
+                    (horizon.states.xs[:], horizon.states.ys[:])
+                )
+
+                tube_upper_pts, tube_lower_pts = env._compute_tube_pts()
                 logger.log_frame(
-                    env.robot_state[:3], velocity, obs,
-                    mpc_horizon, (env.knots, env.xs, env.ys), 
-                    env.upper_coeffs, env.lower_coeffs
+                    env.robot_state[:3],
+                    velocity,
+                    obs,
+                    mpc_horizon,
+                    (env.knots, env.xs, env.ys),
+                    tube_upper_pts,
+                    tube_lower_pts,
                 )
 
             env.render()
@@ -931,17 +1018,17 @@ def main(record_data, manual_step, task_num, world_sweep, world_num, log_data):
         print("CBF_DOT_BLW_STD:", np.average(cbf_dot_blw_std))
 
         print("Code -------------")
-        print("obs_mu[RLObs.CBF_ABV] =",     np.round(np.average(cbf_abv_mu), 4))
+        print("obs_mu[RLObs.CBF_ABV] =", np.round(np.average(cbf_abv_mu), 4))
         print("obs_mu[RLObs.LFH_LGH_ABV] =", np.round(np.average(cbf_dot_abv_mu), 4))
-        print("obs_mu[RLObs.CBF_BLW] =",     np.round(np.average(cbf_blw_mu), 4))
+        print("obs_mu[RLObs.CBF_BLW] =", np.round(np.average(cbf_blw_mu), 4))
         print("obs_mu[RLObs.LFH_LGH_BLW] =", np.round(np.average(cbf_dot_blw_mu), 4))
-        print("obs_mu[-3] =",  np.round(s_dot_mu, 4))
+        print("obs_mu[-3] =", np.round(s_dot_mu, 4))
 
-        print("obs_std[RLObs.CBF_ABV] =",      np.round(np.average(cbf_abv_std), 4))
-        print("obs_std[RLObs.LFH_LGH_ABV] =",  np.round(np.average(cbf_dot_abv_std), 4))
-        print("obs_std[RLObs.CBF_BLW] =",      np.round(np.average(cbf_blw_std), 4))
-        print("obs_std[RLObs.LFH_LGH_BLW] =",  np.round(np.average(cbf_dot_blw_std), 4))
-        print("obs_std[-3] =",  np.round(s_dot_std, 4))
+        print("obs_std[RLObs.CBF_ABV] =", np.round(np.average(cbf_abv_std), 4))
+        print("obs_std[RLObs.LFH_LGH_ABV] =", np.round(np.average(cbf_dot_abv_std), 4))
+        print("obs_std[RLObs.CBF_BLW] =", np.round(np.average(cbf_blw_std), 4))
+        print("obs_std[RLObs.LFH_LGH_BLW] =", np.round(np.average(cbf_dot_blw_std), 4))
+        print("obs_std[-3] =", np.round(s_dot_std, 4))
 
         print("ROW_COUNT:", obs_count)
 

@@ -23,6 +23,7 @@ from py_planner import PlannerParams
 from py_planner import OccupancyGrid
 from MapLoader import parse_xml_file, generate_map_from_cylinders
 
+
 class RLObs(IntEnum):
     # VEL_T = 0
     # VEL_N = auto()
@@ -41,6 +42,7 @@ class RLObs(IntEnum):
     CBF_ABV = 0
     CBF_BLW = auto()
 
+
 def normalize(val, min, max):
     return (val - min) / (max - min)
 
@@ -53,7 +55,13 @@ class BarnEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
     def __init__(
-        self, task={}, n_tasks=2, randomize_tasks=False, n_obs=100, traj_id=None, randomize_traj=False
+        self,
+        task={},
+        n_tasks=2,
+        randomize_tasks=False,
+        n_obs=100,
+        traj_id=None,
+        randomize_traj=False,
     ):
 
         super(BarnEnv, self).__init__()
@@ -104,14 +112,24 @@ class BarnEnv(gym.Env):
 
         self.planner.set_params(self.planner_params)
 
-        obstacles = parse_xml_file("/home/bezzo/Programs/BARN_dataset/world_files/world_296.world")
+        obstacles = parse_xml_file(
+            "/home/bezzo/Programs/BARN_dataset/world_files/world_296.world"
+        )
         # obstacles = parse_xml_file("/Users/nickmohammad/Programs/BARN_dataset/world_files/world_1.world")
         # obstacles = parse_xml_file("/Users/nickmohammad/Programs/BARN_dataset/world_files/world_1.world")
         self.occupancy_grid = generate_map_from_cylinders(obstacles, 0, 0, 0)
-        self.map_util = OccupancyGrid(self.occupancy_grid.info.width, self.occupancy_grid.info.height, self.occupancy_grid.info.resolution, float(self.occupancy_grid.info.origin.position[0]), float(self.occupancy_grid.info.origin.position[1]), np.array(self.occupancy_grid.data), np.array([253, 254]), np.array([255]))
+        self.map_util = OccupancyGrid(
+            self.occupancy_grid.info.width,
+            self.occupancy_grid.info.height,
+            self.occupancy_grid.info.resolution,
+            float(self.occupancy_grid.info.origin.position[0]),
+            float(self.occupancy_grid.info.origin.position[1]),
+            np.array(self.occupancy_grid.data),
+            np.array([253, 254]),
+            np.array([255]),
+        )
 
         self.planner.set_costmap(self.map_util)
-
 
         if len(self.task_loader) == 0:
             raise ValueError("No parameter files found!")
@@ -143,7 +161,6 @@ class BarnEnv(gym.Env):
         self.plotter = None
         self.reset()
 
-
     def set_mpc(self, params):
 
         self.params = copy.deepcopy(params)
@@ -152,17 +169,15 @@ class BarnEnv(gym.Env):
         # self.params["CBF_ALPHA_ABV"] = 2.5
         # self.params["CBF_ALPHA_BLW"] = 2.5
 
-        init_pose = np.concatenate(([-2.25, -2.5], [np.pi/2]))
+        init_pose = np.concatenate(([-2.25, -2.5], [np.pi / 2]))
         self.mpc = RobotMPC(init_pose, self.params)
         self.mpc.set_occ_map(self.occupancy_grid)
         self.robot_state = self.mpc.get_robot_state()
 
-        self.upper_coeffs = np.array([0] * (self.params["TUBE_DEGREE"]+1))
-        self.upper_coeffs[0] = self.params["MAX_TUBE_WIDTH"]/2.0
-        self.lower_coeffs = np.array([0] * (self.params["TUBE_DEGREE"]+1))
-        self.lower_coeffs[0] = self.params["MAX_TUBE_WIDTH"]/ 2.0
-
-
+        self.upper_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
+        self.upper_coeffs[0] = self.params["MAX_TUBE_WIDTH"] / 2.0
+        self.lower_coeffs = np.array([0] * (self.params["TUBE_DEGREE"] + 1))
+        self.lower_coeffs[0] = self.params["MAX_TUBE_WIDTH"] / 2.0
 
     def load_tasks(self):
         param_path = os.path.join(os.path.dirname(__file__), "configs")
@@ -181,11 +196,11 @@ class BarnEnv(gym.Env):
         polys = vec_MatX4d()
 
         if self.curve is None:
-            start = np.zeros((3,4))
-            start[:2,0] = self.robot_state[:2]
+            start = np.zeros((3, 4))
+            start[:2, 0] = self.robot_state[:2]
 
-            goal = np.zeros((3,4))
-            goal[:2,0] = [-2.25, 8.5]
+            goal = np.zeros((3, 4))
+            goal[:2, 0] = [-2.25, 8.5]
 
             status, jpsPath, polys = self._plan(start, goal)
 
@@ -198,12 +213,12 @@ class BarnEnv(gym.Env):
 
             self.planner.set_costmap(self.map_util)
 
-            start = np.zeros((3,4))
+            start = np.zeros((3, 4))
             # start[:2,0] = self.current_ref
-            start[:2,0] = self.robot_state[:2]
+            start[:2, 0] = self.robot_state[:2]
 
-            goal = np.zeros((3,4))
-            goal[:2,0] = [-2.25, 8.5]
+            goal = np.zeros((3, 4))
+            goal[:2, 0] = [-2.25, 8.5]
 
             self.planner.set_costmap(self.map_util)
             self.planner.set_start(start)
@@ -228,10 +243,20 @@ class BarnEnv(gym.Env):
         ref_len = self.params["REF_LENGTH"]
         horizon = ref_len
         if len_start + horizon > self.knots[-1]:
-            horizon = self.knots[-1] - len_start;
+            horizon = self.knots[-1] - len_start
 
         if self.params["USE_CBF"]:
-            new_tubes = self.mpc.get_tubes(self.params["TUBE_DEGREE"], 100, self.params["MAX_TUBE_WIDTH"] / 2.0, self.xs, self.ys, 3, self.knots, len_start, horizon)
+            new_tubes = self.mpc.get_tubes(
+                self.params["TUBE_DEGREE"],
+                100,
+                self.params["MAX_TUBE_WIDTH"] / 2.0,
+                self.xs,
+                self.ys,
+                3,
+                self.knots,
+                len_start,
+                horizon,
+            )
 
             if len(new_tubes[0]) > 0:
                 self.upper_coeffs = new_tubes[0]
@@ -253,7 +278,6 @@ class BarnEnv(gym.Env):
 
         if alpha_blw < self.params["MIN_ALPHA"] or alpha_blw > self.params["MAX_ALPHA"]:
             exceed_count += 1
-
 
         # self.params["CBF_ALPHA_ABV"] = np.clip(
         #     alpha_abv, self.params["MIN_ALPHA"], self.params["MAX_ALPHA"]
@@ -278,7 +302,7 @@ class BarnEnv(gym.Env):
         v_max = self.params["LINVEL"]
         solver_status = self.mpc.get_solver_status()
         mpc_state = self.mpc.get_mpc_state()
-        progress = mpc_state[5] / np.sqrt(2 * v_max **2)
+        progress = mpc_state[5] / np.sqrt(2 * v_max**2)
 
         # distance to nearest bound (per alpha)
         rl_min_alpha = self.params["MIN_ALPHA"] - 1.0
@@ -297,7 +321,7 @@ class BarnEnv(gym.Env):
         # smooth penalty when violated
         violation = d < 0
         if np.any(violation):
-            reward -= .1 * np.sum((-d[violation]) ** 2)
+            reward -= 0.1 * np.sum((-d[violation]) ** 2)
 
         if np.any(obs < -1.0) or np.any(obs > 1.0):
             reward = -5.0
@@ -420,7 +444,7 @@ class BarnEnv(gym.Env):
     #
     #     # if exceed_count > 0:
     #     #     reward = BarnEnv.get_reward(
-    #     #             obs, 
+    #     #             obs,
     #     #             True,
     #     #             0,
     #     #             action,
@@ -430,7 +454,7 @@ class BarnEnv(gym.Env):
     #     #     )
     #     #     self.total_reward += reward
     #     #     return (
-    #     #         obs, 
+    #     #         obs,
     #     #         reward,
     #     #         True,
     #     #         {},
@@ -553,7 +577,12 @@ class BarnEnv(gym.Env):
 
         self.plotter.add_state_to_path(self.robot_state[:2])
         self.plotter.render(
-            self.robot_state, self.current_ref, self.curve, self.mpc, self.upper_coeffs, self.lower_coeffs
+            self.robot_state,
+            self.current_ref,
+            self.curve,
+            self.mpc,
+            self.upper_coeffs,
+            self.lower_coeffs,
         )
 
         return self.plotter.ax
@@ -605,10 +634,12 @@ class BarnEnv(gym.Env):
 
         signed_dist = side * self._dist_from_traj(self.robot_state[:2])
 
-        # technically maximum distance is sum of both... 
+        # technically maximum distance is sum of both...
         max_width = self.params["MAX_TUBE_WIDTH"]
 
-        remaining_len = min(self.curve.get_arclen() - len_start, self.params["REF_LENGTH"])
+        remaining_len = min(
+            self.curve.get_arclen() - len_start, self.params["REF_LENGTH"]
+        )
 
         vel = np.array(mpc_state[2:4])
         # obs[RLObs.VEL_T] = normalize(np.dot(vel, tangent), state_limits[0][2], state_limits[1][2])
@@ -683,12 +714,10 @@ class BarnEnv(gym.Env):
             # + w_safety * safety_blw
             # +
             # w_progress * (1 - progress) +
-
             # w_progress * progress
-            + bounds_penalty
+            +bounds_penalty
             # + collision
             # + feasibility
-
             # - w_alpha_reg * mid_abv
             # - w_alpha_reg * mid_blw
             # - w_alpha_reg * reg_abv
@@ -707,7 +736,6 @@ class BarnEnv(gym.Env):
         # print('\talpha_abv_reg:', w_alpha_reg * reg_abv)
         # print('\talpha_blw_reg:', w_alpha_reg * reg_blw)
         # print('total:', reward)
-
 
         return reward
 
@@ -760,4 +788,3 @@ if __name__ == "__main__":
     #     _, _, done, _ = env.step([0, 0])
     #     env.render()
     #     i += 1
-

@@ -20,7 +20,14 @@ from oyster.CBFEnv import CBFEnv
 
 
 def sim_policy(
-    variant, path_to_exp, world_num=0, num_trajs=1, deterministic=False, save_video=False, log_data=False, manual_step=False
+    variant,
+    path_to_exp,
+    world_num=0,
+    num_trajs=1,
+    deterministic=False,
+    save_video=False,
+    log_data=False,
+    manual_step=False,
 ):
     """
     simulate a trained policy adapting to a new task
@@ -39,15 +46,27 @@ def sim_policy(
     # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[282, 290, 0], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    # env = CBFEnv(world_num=[0, 282, 290], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
+    env = CBFEnv(
+        world_num=[0, 282, 290],
+        manual_step=manual_step,
+        save_video=save_video,
+        max_step_count=max_path_length,
+    )
+    # env = CBFEnv(
+    #     world_num=[world_num],
+    #     manual_step=manual_step,
+    #     save_video=save_video,
+    #     max_step_count=max_path_length,
+    # )
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    N = 1
-    eval_tasks=list(tasks[-variant['n_eval_tasks']+ N -1:-variant['n_eval_tasks'] + N])
+    N = 3
+    eval_tasks = list(
+        tasks[-variant["n_eval_tasks"] + N - 1 : -variant["n_eval_tasks"] + N]
+    )
     # eval_tasks=list([tasks[-1]])
     print(
         "testing on {} test tasks, {} trajectories each".format(
@@ -90,11 +109,18 @@ def sim_policy(
     # load trained weights (otherwise simulate random policy)
     # itr = 74
     itr = 74
-    cpu_device = None if torch.cuda.is_available() else torch.device('cpu')
+    cpu_device = None if torch.cuda.is_available() else torch.device("cpu")
     context_encoder.load_state_dict(
-        torch.load(os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"), map_location=cpu_device)
+        torch.load(
+            os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"),
+            map_location=cpu_device,
+        )
     )
-    policy.load_state_dict(torch.load(os.path.join(path_to_exp, f"policy_itr_{itr}.pth"), map_location=cpu_device))
+    policy.load_state_dict(
+        torch.load(
+            os.path.join(path_to_exp, f"policy_itr_{itr}.pth"), map_location=cpu_device
+        )
+    )
 
     # loop through tasks collecting rollouts
     all_rets = []
@@ -108,15 +134,21 @@ def sim_policy(
             logger = None
             if log_data:
                 titles = {
-                    6: "di_1_5", 
-                    7: "di_2_5", 
-                    8: "uni_1_8", 
-                    9: "uni_1_5", 
+                    6: "di_1_5",
+                    7: "di_2_5",
+                    8: "uni_1_8",
+                    9: "uni_1_5",
                 }
                 now = datetime.now()
                 date_str = now.strftime("%Y_%m_%d_%H%M%S")
-                logger = Logger(f"world_{env.world_nums[0]}_{titles[idx]}_{date_str}.json")
+                logger = Logger(
+                    f"world_{env.world_nums[0]}_{titles[idx]}_{date_str}.json"
+                )
+
+                logger.log_world_nums(env.world_nums)
                 logger.log_static_obstacles(env.obstacles)
+                logger.log_start_and_goal(env._start, env._goal)
+                logger.log_meta_data(env.params)
 
             path = rollout(
                 env,
@@ -124,7 +156,7 @@ def sim_policy(
                 max_path_length=max_path_length,
                 accum_context=True,
                 save_frames=False,
-                animated=True,
+                animated=False,
                 logger=logger,
             )
             paths.append(path)
@@ -180,13 +212,17 @@ def sim_policy(
 @click.option("--video", is_flag=True, default=False)
 @click.option("--log_data", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(config, path, world_num, num_trajs, deterministic, video, log_data, manual_step):
+def main(
+    config, path, world_num, num_trajs, deterministic, video, log_data, manual_step
+):
     variant = default_config
     if config:
         with open(osp.join(config)) as f:
             exp_params = json.load(f)
         variant = deep_update_dict(exp_params, variant)
-    sim_policy(variant, path, world_num, num_trajs, deterministic, video, log_data, manual_step)
+    sim_policy(
+        variant, path, world_num, num_trajs, deterministic, video, log_data, manual_step
+    )
 
 
 if __name__ == "__main__":

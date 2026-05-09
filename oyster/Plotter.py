@@ -51,9 +51,7 @@ class Plotter:
         # self.ax.set_aspect("equal", adjustable="box")
 
         self.ax_alphas = plt.subplot2grid((2, 2), (0, 1))
-        self.ax_cbfs = plt.subplot2grid(
-            (2, 2), (1, 1), sharex=self.ax_alpha_upper
-        )
+        self.ax_cbfs = plt.subplot2grid((2, 2), (1, 1), sharex=self.ax_alpha_upper)
         # self.fig, (self.ax, self.ax_alpha_col) = plt.subplots(
         #         1, 2, figsize=(14, 8), gridspec_kw={"width_ratios": [3, 1]}
         # )
@@ -278,8 +276,8 @@ class Plotter:
         ref_len = mpc.get_params()["REF_LENGTH"]
         upper_coeffs, lower_coeffs = tube_gen.shift_poly_parameter(len_start, ref_len)
 
-        cbf_abv = mpc.get_cbf_abv(horizon[0,1:7], upper_coeffs, xs, ys)
-        cbf_blw = mpc.get_cbf_abv(horizon[0,1:7], lower_coeffs, xs, ys)
+        cbf_abv = mpc.get_cbf_abv(horizon[0, 1:7], upper_coeffs, xs, ys)
+        cbf_blw = mpc.get_cbf_abv(horizon[0, 1:7], lower_coeffs, xs, ys)
 
         return cbf_abv, cbf_blw
 

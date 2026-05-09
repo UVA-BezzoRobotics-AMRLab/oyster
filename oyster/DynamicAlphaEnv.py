@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 
 from gym import spaces
 
+
 def normalize_alpha(alpha, alpha_min, alpha_max):
     return 2.0 * (alpha - alpha_min) / (alpha_max - alpha_min) - 1.0
+
 
 class TwoAlphaBoundsEnv(gym.Env):
     def __init__(self):
@@ -13,14 +15,18 @@ class TwoAlphaBoundsEnv(gym.Env):
 
         self.dt = 0.1
 
-        self.min_alpha = .05
+        self.min_alpha = 0.05
         self.max_alpha = 5
 
         self.rl_min_alpha = -1.0
         self.rl_max_alpha = 7.5
 
-        self.norm_min_alpha = normalize_alpha(self.min_alpha, self.rl_min_alpha, self.rl_max_alpha)
-        self.norm_max_alpha = normalize_alpha(self.max_alpha, self.rl_min_alpha, self.rl_max_alpha)
+        self.norm_min_alpha = normalize_alpha(
+            self.min_alpha, self.rl_min_alpha, self.rl_max_alpha
+        )
+        self.norm_max_alpha = normalize_alpha(
+            self.max_alpha, self.rl_min_alpha, self.rl_max_alpha
+        )
 
         self.min_alpha_dot = -3
         self.max_alpha_dot = 3
@@ -105,10 +111,8 @@ class TwoAlphaBoundsEnv(gym.Env):
         self.step_count += 1
 
         # unnormalize actions (EXACTLY like your env)
-        alpha_dot = (
-            self.min_alpha_dot
-            + 0.5 * (action + 1.0)
-            * (self.max_alpha_dot - self.min_alpha_dot)
+        alpha_dot = self.min_alpha_dot + 0.5 * (action + 1.0) * (
+            self.max_alpha_dot - self.min_alpha_dot
         )
 
         # integrator
@@ -130,8 +134,7 @@ class TwoAlphaBoundsEnv(gym.Env):
         # smooth penalty when violated
         violation = d < 0
         if np.any(violation):
-            reward -= .1 * np.sum((-d[violation]) ** 2)
-
+            reward -= 0.1 * np.sum((-d[violation]) ** 2)
 
         done = self.step_count >= self.horizon
 
@@ -143,4 +146,3 @@ class TwoAlphaBoundsEnv(gym.Env):
         self.reward += reward
 
         return obs, reward, done, {}
-
