@@ -17,57 +17,50 @@ from oyster.rlkit.samplers.util import rollout
 from oyster.CBFEnv import CBFEnv
 
 
+def load_world_list(file_path):
+    """Reads world numbers from a file, assuming one per line."""
+    if not os.path.exists(file_path):
+        print(f"Error: World list file {file_path} not found.")
+        return []
+    with open(file_path, "r") as f:
+        return [int(line.strip()) for line in f if line.strip()]
+
+
 def sim_policy(
     variant,
     path_to_exp,
     world_num=0,
+    start_task_idx=0,  # New argument
     num_trajs=1,
     deterministic=False,
     save_video=False,
     manual_step=False,
+    world_nums=[],
 ):
-    """
-    simulate a trained policy adapting to a new task
-    optionally save videos of the trajectories - requires ffmpeg
-
-    :variant: experiment configuration dict
-    :path_to_exp: path to exp folder
-    :num_trajs: number of trajectories to simulate per task (default 1)
-    :deterministic: if the policy is deterministic (default stochastic)
-    :save_video: whether to generate and save a video (default False)
-    """
-
-    # create multi-task environment and sample tasks
     max_path_length = 250
-    # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    # env = CBFEnv(world_num=[285, 140, 245], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-<<<<<<< Updated upstream
     env = CBFEnv(
         world_num=[world_num],
         manual_step=manual_step,
         save_video=save_video,
         max_step_count=max_path_length,
-        N=9,
+        N=3,
     )
-=======
-    env = CBFEnv(world_num=[world_num], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length, N=8)
->>>>>>> Stashed changes
-    # env = RobotEnv(randomize_traj=True)
+
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
-    # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    # N = 0
-    eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
-    # eval_tasks=list([tasks[-1]])
+
+    # Filter tasks based on the starting task index provided
+    all_eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
+    eval_tasks = [t for t in all_eval_tasks if t >= start_task_idx]
+
     print(
-        "testing on {} test tasks, {} trajectories each".format(
-            len(eval_tasks), num_trajs
+        "Testing starting from Task {} ({} tasks total), starting from World {}".format(
+            start_task_idx, len(eval_tasks), world_num
         )
     )
 
-    # instantiate networks
+    # ... [Network instantiation code remains the same] ...
     latent_dim = variant["latent_size"]
     context_encoder_output_dim = (
         latent_dim * 2
@@ -95,13 +88,11 @@ def sim_policy(
         action_dim=action_dim,
     )
     agent = PEARLAgent(latent_dim, context_encoder, policy, **variant["algo_params"])
-    # deterministic eval
     if deterministic:
         agent = MakeDeterministic(agent)
 
-    # load trained weights (otherwise simulate random policy)
     itr = 74
-    cpu_device = None if torch.cuda.is_available() else torch.device('cpu')
+    cpu_device = None if torch.cuda.is_available() else torch.device("cpu")
     context_encoder.load_state_dict(
         torch.load(
             os.path.join(path_to_exp, f"context_encoder_itr_{itr}.pth"),
@@ -114,22 +105,25 @@ def sim_policy(
         )
     )
 
-    # loop through tasks collecting rollouts
-    # video_frames = []
-    outfile = "cbf_adapt_horizon_8.txt"
-    with open(outfile, "w", newline="") as f:
-        f.write("Below are the simulation results for the test trials\n")
-        f.write("WORLD\tTASK\tSUCCESS\tSTEPS\tLOWEST_CLEARANCE\n")
+    outfile = "cbf_adapt_gcopter.txt"
+    # Only write header if we are starting from the beginning
+    if world_num == 0 and (not eval_tasks or eval_tasks[0] == all_eval_tasks[0]):
+        with open(outfile, "w", newline="") as f:
+            f.write("Below are the simulation results for the test trials\n")
+            f.write("WORLD\tTASK\tSUCCESS\tSTEPS\tLOWEST_CLEARANCE\n")
 
+    if world_nums == []:
+        world_nums = list(range(world_num, 300))
+
+    # Loop through tasks and worlds
     for idx in eval_tasks:
-
-        for world_n in range(0, 300):
+        # Start world_n from world_num, then increment to 300
+        for world_n in world_nums:
             env.set_world([world_n])
-
             env.reset_task(idx)
             agent.clear_z()
-            paths = []
             updated = False
+
             for n in range(5):
                 path = rollout(
                     env,
@@ -142,7 +136,7 @@ def sim_policy(
 
                 with open(outfile, "a", newline="") as f:
                     f.write(
-                        "%d\t%d\t%d\t%d\t%.3f\t\n"
+                        "%d\t%d\t%d\t%d\t%.3f\n"
                         % (
                             world_n,
                             idx,
@@ -156,22 +150,53 @@ def sim_policy(
                     updated = True
                     agent.infer_posterior(agent.context)
 
+        # After completing all worlds for the first task,
+        # reset world_num to 0 so the NEXT task starts from World 0
+        world_num = 0
+
 
 @click.command()
 @click.argument("config", default=None)
 @click.argument("path", default=None)
-@click.option("--world_num", default=0)
+@click.option("--world_num", default=0, type=int, help="Starting world number")
+@click.option("--task_num", default=0, type=int, help="Starting task index")
 @click.option("--num_trajs", default=3)
 @click.option("--stochastic", is_flag=True, default=False)
 @click.option("--video", is_flag=True, default=False)
 @click.option("--manual_step", is_flag=True, default=False)
-def main(config, path, world_num, num_trajs, stochastic, video, manual_step):
+@click.option(
+    "--world_list_file", default="", help="Path to file containing world numbers."
+)
+def main(
+    config,
+    path,
+    world_num,
+    task_num,
+    num_trajs,
+    stochastic,
+    video,
+    manual_step,
+    world_list_file,
+):
     variant = default_config
     if config:
         with open(osp.join(config)) as f:
             exp_params = json.load(f)
         variant = deep_update_dict(exp_params, variant)
-    sim_policy(variant, path, world_num, num_trajs, not stochastic, video, manual_step)
+
+    world_nums = load_world_list(world_list_file)
+
+    sim_policy(
+        variant,
+        path,
+        world_num,
+        task_num,
+        num_trajs,
+        not stochastic,
+        video,
+        manual_step,
+        world_nums,
+    )
 
 
 if __name__ == "__main__":

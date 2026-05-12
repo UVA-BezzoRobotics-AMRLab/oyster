@@ -1,8 +1,15 @@
 import os
 import re
 import json
+import platform
 import argparse
 import numpy as np
+
+if platform.system() == "Linux":
+    import matplotlib
+
+    matplotlib.use("TkAgg")
+
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Circle, Polygon
