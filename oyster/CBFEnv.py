@@ -90,8 +90,8 @@ class CBFEnv(gym.Env):
         self.traj_planner_success = False
 
         self.planner_params = PlannerParams()
-        self.planner_params.SOLVER = "faster"
-        # self.planner_params.SOLVER = "gcopter"
+        # self.planner_params.SOLVER = "faster"
+        self.planner_params.SOLVER = "gcopter"
         self.planner_params.W_MAX = 5
         self.planner_params.V_MAX = 100
         self.planner_params.A_MAX = 500
@@ -189,7 +189,7 @@ class CBFEnv(gym.Env):
         )
 
         self.collision_occupancy_grid = generate_map_from_cylinders(
-            self.obstacles, 0, 0, 0, obstacle_inflation=0.25
+            self.obstacles, 0, 0, 0, obstacle_inflation=0.325
         )
         self.collision_map_util = OccupancyGrid(
             self.collision_occupancy_grid.info.width,
@@ -375,7 +375,7 @@ class CBFEnv(gym.Env):
             or (len_start >= self.knots[-1] - 0.2)
             or is_colliding
             or abs(self.robot_state[1] - self._goal[1, 0]) < 1
-            or self.closest_obstacle_pass < 0.075
+            # or self.closest_obstacle_pass < 0.075
         )
 
         self.total_reward += reward
@@ -624,7 +624,7 @@ class CBFEnv(gym.Env):
         velocity = (
             self.robot_state[3]
             if self.dynamic_model == Dynamics.UNICYCLE
-            else np.linalg.norm(self.robot_state[3:5])
+            else np.linalg.norm(self.robot_state[2:4])
         )
         horizon = self.mpc.get_horizon()
         mpc_horizon = np.column_stack((horizon.states.xs[:], horizon.states.ys[:]))

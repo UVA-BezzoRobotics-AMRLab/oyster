@@ -25,9 +25,9 @@ w_contour_e: 1.0
 w_speed: .80
 
 # CLF Params
-w_lyap_lag_e: 1
-w_lyap_contour_e: 1
-clf_gamma: 10.0
+w_lyap_lag_e: 0.1
+w_lyap_contour_e: 0.1
+clf_gamma: 0.5
 # w_lyap_lag_e: 1
 # w_lyap_contour_e: 1
 # clf_gamma: .5
