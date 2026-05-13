@@ -46,24 +46,24 @@ def sim_policy(
     # env = CBFEnv(world_num=[140, 245, 285], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[245, 285, 140], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
     # env = CBFEnv(world_num=[282, 290, 0], manual_step=manual_step, save_video=save_video, max_step_count=max_path_length)
-    env = CBFEnv(
-        world_num=[0, 282, 290],
-        manual_step=manual_step,
-        save_video=save_video,
-        max_step_count=max_path_length,
-    )
     # env = CBFEnv(
-    #     world_num=[world_num],
+    #     world_num=[0, 282, 290],
     #     manual_step=manual_step,
     #     save_video=save_video,
     #     max_step_count=max_path_length,
     # )
+    env = CBFEnv(
+        world_num=[world_num],
+        manual_step=manual_step,
+        save_video=save_video,
+        max_step_count=max_path_length,
+    )
     # env = RobotEnv(randomize_traj=True)
     tasks = env.get_all_task_idx()
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    N = 3
+    N = 1
     eval_tasks = list(
         tasks[-variant["n_eval_tasks"] + N - 1 : -variant["n_eval_tasks"] + N]
     )
@@ -156,7 +156,7 @@ def sim_policy(
                 max_path_length=max_path_length,
                 accum_context=True,
                 save_frames=False,
-                animated=False,
+                animated=True,
                 logger=logger,
             )
             paths.append(path)
@@ -200,7 +200,6 @@ def sim_policy(
 
     print("total rets:")
     print(total_rets)
-    a = input()
 
 
 @click.command()

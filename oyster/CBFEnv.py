@@ -90,8 +90,8 @@ class CBFEnv(gym.Env):
         self.traj_planner_success = False
 
         self.planner_params = PlannerParams()
-        self.planner_params.SOLVER = "faster"
-        # self.planner_params.SOLVER = "gcopter"
+        # self.planner_params.SOLVER = "faster"
+        self.planner_params.SOLVER = "gcopter"
         self.planner_params.W_MAX = 5
         self.planner_params.V_MAX = 100
         self.planner_params.A_MAX = 500
@@ -189,7 +189,12 @@ class CBFEnv(gym.Env):
         )
 
         self.collision_occupancy_grid = generate_map_from_cylinders(
-            self.obstacles, 0, 0, 0, obstacle_inflation=0.25
+            # self.obstacles, 0, 0, 0, obstacle_inflation=0.25
+            self.obstacles,
+            0,
+            0,
+            0,
+            obstacle_inflation=0.325,
         )
         self.collision_map_util = OccupancyGrid(
             self.collision_occupancy_grid.info.width,
@@ -298,8 +303,6 @@ class CBFEnv(gym.Env):
         self.update_trajectory()
         trajectory = self.mpc.get_trajectory()
 
-        self.params = self.mpc.get_params()
-
         len_start = trajectory.get_closest_s(self.robot_state[:2])
         print("len start: ", len_start)
         print("knots[-1]: ", self.knots[-1])
@@ -375,7 +378,7 @@ class CBFEnv(gym.Env):
             or (len_start >= self.knots[-1] - 0.2)
             or is_colliding
             or abs(self.robot_state[1] - self._goal[1, 0]) < 1
-            or self.closest_obstacle_pass < 0.075
+            # or self.closest_obstacle_pass < 0.075
         )
 
         self.total_reward += reward
@@ -405,9 +408,9 @@ class CBFEnv(gym.Env):
         if self.plotter:
             self.plotter.close()
 
-        params = self.task_loader[self.task_idx].copy()
-        min_alpha = params.cbf.min_alpha
-        max_alpha = params.cbf.max_alpha
+        self.params = self.task_loader[self.task_idx].copy()
+        min_alpha = self.params.cbf.min_alpha
+        max_alpha = self.params.cbf.max_alpha
 
         self._goal = np.zeros((3, 4))
         self._goal[:2, 0] = [-2.25, -2.5]
@@ -419,8 +422,8 @@ class CBFEnv(gym.Env):
         self._start = tmp
 
         if self.epoch >= self.traj_schedule[0]:
-            params.cbf.alpha_abv = np.random.uniform(min_alpha, max_alpha)
-            params.cbf.alpha_blw = np.random.uniform(min_alpha, max_alpha)
+            self.params.cbf.alpha_abv = np.random.uniform(min_alpha, max_alpha)
+            self.params.cbf.alpha_blw = np.random.uniform(min_alpha, max_alpha)
 
             # randomly swap the two goals...
             r = np.random.randint(2)
@@ -434,11 +437,11 @@ class CBFEnv(gym.Env):
             world_num = self.worlds[delta // self.traj_schedule[1]]
             self.set_world([world_num])
 
-        params.cbf.use_cbf = True
-        # params.cbf.alpha_abv = 3.0
-        # params.cbf.alpha_blw = 3.0
+        # self.params.cbf.use_cbf = True
+        # params.cbf.alpha_abv = 6.0
+        # params.cbf.alpha_blw = 6.0
 
-        self.set_mpc(params)
+        self.set_mpc(self.params)
         # print("params:", params)
 
         self.planner.has_trajectory = False
@@ -449,7 +452,7 @@ class CBFEnv(gym.Env):
         # print(self.normalize_obs)
 
         obs = np.zeros(self.state_dim, dtype=np.float64)
-        obs[-self.N_alpha :] = [params.cbf.alpha_abv, params.cbf.alpha_blw]
+        obs[-self.N_alpha :] = [self.params.cbf.alpha_abv, self.params.cbf.alpha_blw]
         return self.normalize_obs(obs) if self.should_normalize else obs
 
     def get_obs(self):
@@ -467,9 +470,29 @@ class CBFEnv(gym.Env):
 
         state = self.mpc.get_state_from_horizon(0)
         len_start = max(trajectory.get_closest_s(state[:2]), 1e-6)
-        adjusted_traj = trajectory.get_adjusted_traj(
-            len_start, int(self.mpc.get_params().ref_samples)
-        )
+        try:
+            adjusted_traj = trajectory.get_adjusted_traj(
+                len_start, int(self.mpc.get_params().ref_samples)
+            )
+        except Exception as e:
+            print("warning:", str(e))
+            print("setting observation to default value")
+            obs = np.zeros(len(RLObs) * self.N_horizon + self.N_alpha + 1)
+
+            for i in range(self.N_horizon):
+                obs[i * len(RLObs) + RLObs.CBF_ABV] = self.params.tube.max_width / 2.0
+                obs[i * len(RLObs) + RLObs.LFH_LGH_ABV] = 0.0
+                obs[i * len(RLObs) + RLObs.CBF_BLW] = self.params.tube.max_width / 2.0
+                obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = 0.0
+
+            obs[-self.N_alpha - 1] = float(state[-1])
+            obs[-self.N_alpha :] = [
+                self.params.cbf.alpha_abv,
+                self.params.cbf.alpha_blw,
+            ]
+
+            return obs
+
         xs = adjusted_traj.get_ctrls_x()
         ys = adjusted_traj.get_ctrls_y()
 
@@ -624,7 +647,7 @@ class CBFEnv(gym.Env):
         velocity = (
             self.robot_state[3]
             if self.dynamic_model == Dynamics.UNICYCLE
-            else np.linalg.norm(self.robot_state[3:5])
+            else np.linalg.norm(self.robot_state[2:4])
         )
         horizon = self.mpc.get_horizon()
         mpc_horizon = np.column_stack((horizon.states.xs[:], horizon.states.ys[:]))
