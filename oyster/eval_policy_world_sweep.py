@@ -43,7 +43,7 @@ def sim_policy(
         manual_step=manual_step,
         save_video=save_video,
         max_step_count=max_path_length,
-        N=3,
+        N=2,
     )
 
     tasks = env.get_all_task_idx()
