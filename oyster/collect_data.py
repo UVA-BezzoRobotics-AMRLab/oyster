@@ -30,12 +30,12 @@ def main(world_list_file):
     env = CBFEnv()
     tasks = env.get_all_task_idx()
     # As per your snippet: testing the last 4 tasks
-    eval_tasks = tasks[-4:]
+    eval_tasks = [tasks[6]]
 
     # 3. Sweep iterate for every alpha value
     for alpha in alpha_schedule:
         # 4. Create new file for this specific alpha
-        outfile = f"cbf_adapt_gcopter_alpha_{alpha}.txt"
+        outfile = f"cbf_bicycle_1_5_alpha_{alpha}.txt"
 
         # Initialize the new file with headers
         with open(outfile, "w", newline="") as f:

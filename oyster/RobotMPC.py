@@ -35,6 +35,9 @@ def load_casadi_functions(mpc_type):
     if mpc_type == Dynamics.UNICYCLE:
         prefix = "unicycle_model"
         so_file = "libcasadi_unicycle_model_mpcc_internals.so"
+    elif mpc_type == Dynamics.BICYCLE:
+        prefix = "bicycle"
+        so_file = "libcasadi_bicycle_mpcc_internals.so"
 
     fn_names = [
         "xr",
@@ -85,7 +88,7 @@ class RobotMPC:
         self.robot_state = np.zeros(4, dtype=np.float64)
         self.robot_state[:2] = init_pos[:2]
 
-        if self.dyn_model == Dynamics.UNICYCLE:
+        if self.dyn_model == Dynamics.UNICYCLE or self.dyn_model == Dynamics.BICYCLE:
             self.robot_state[2] = init_pos[2]
 
         self.dt = params.dt
@@ -170,7 +173,7 @@ class RobotMPC:
             self.robot_state[0] += self.robot_state[2] * self.dt
             self.robot_state[1] += self.robot_state[3] * self.dt
 
-        elif self.dyn_model == Dynamics.UNICYCLE:
+        elif self.dyn_model == Dynamics.UNICYCLE: # or self.dyn_model == Dynamics.BICYCLE:
             # u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
             u_uni = u
             # u_uni[0] = max(min(u_uni[0], self.v_max), -self.v_max)
@@ -184,25 +187,30 @@ class RobotMPC:
             )
             self.robot_state[3] = u_uni[0]
 
-        # elif self.dyn_model == Dynamics.BICYCLE:
-        #     # print("initial u:", u)
-        #     u_uni = self._di_to_uni_cmd_mapper(self.robot_state, u)
-        #     L = 0.5
-        #     if u_uni[0] > 1e-3:
-        #         delta = np.arctan2(L * u_uni[1], u_uni[0])
-        #     elif u_uni[1] > 1e-2:
-        #         u_uni[0] = 0.1
-        #         delta = np.arctan2(L * u_uni[1], u_uni[0])
-        #     else:
-        #         delta = 0.0
+        elif self.dyn_model == Dynamics.BICYCLE:
+            _, tan_delta, _ = self.get_input_from_horizon(0)
+            v = u[0]
+            # delta = u[1]
+            L = 0.5  # Wheelbase length
 
-        #     delta = np.clip(delta, -np.pi / 6, np.pi / 6)
-        #     # print("mapped u:", u_uni)
+            # 1. Enforce physical steering limits (e.g., +/- 30 degrees)
+            # delta = np.clip(delta, -np.pi / 6, np.pi / 6)
 
-        #     self.robot_state[0] += u_uni[0] * np.cos(self.robot_state[2]) * self.dt
-        #     self.robot_state[1] += u_uni[0] * np.sin(self.robot_state[2]) * self.dt
-        #     self.robot_state[2] += u_uni[0] * np.tan(delta) / L * self.dt
-        #     self.robot_state[3] = u_uni[0]
+            # 2. Update positions (x, y) based on current heading (theta)
+            self.robot_state[0] += v * np.cos(self.robot_state[2]) * self.dt
+            self.robot_state[1] += v * np.sin(self.robot_state[2]) * self.dt
+
+            # 3. Update heading (theta) using the bicycle kinematic equation: d_theta = (v / L) * tan(delta)
+            self.robot_state[2] += (v * tan_delta / self.params.body_length) * self.dt
+
+            # 4. Normalize heading angle between -pi and pi
+            self.robot_state[2] = np.arctan2(
+                np.sin(self.robot_state[2]), np.cos(self.robot_state[2])
+            )
+
+            # 5. Save the linear velocity to the state (matching your unicycle logic)
+            self.robot_state[3] = v
+            print("STATE", self.robot_state)
 
         return self.robot_state
 

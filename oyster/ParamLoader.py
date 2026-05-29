@@ -36,6 +36,7 @@ class ParameterLoader:
         cfg.dt = 1.0 / self.get(params, "controller_frequency", 10)
         cfg.ref_samples = self.get(params, "mpc_ref_samples", 100)
         cfg.input_type = Dynamics(self.get(params, "mpc_input_type", 1))
+        cfg.body_length = self.get(params, "body_length", 0.5)
 
         # Cost weights
         cfg.weights.w_vel = self.get(params, "w_vel", 1.0)

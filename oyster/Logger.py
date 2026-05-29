@@ -11,6 +11,17 @@ def _ensure_list(data):
         return [_ensure_list(item) for item in data]
     return data
 
+def model_to_str(model):
+    ret = "Unknown"
+    if model == Dynamics.UNICYCLE:
+        ret = "Unicycle"
+    elif model == Dynamics.DOUBLE_INTEGRATOR:
+        ret = "Double Integrator"
+    elif model == Dynamics.BICYCLE:
+        ret = "Bicycle"
+
+    return ret
+
 
 class Logger:
     def __init__(self, filename="sim_data.json"):
@@ -31,11 +42,7 @@ class Logger:
         self.data["world_nums"] = _ensure_list(nums)
 
     def log_meta_data(self, params):
-        model_str = (
-            "Unicycle"
-            if params.input_type == Dynamics.UNICYCLE
-            else "Double Integrator"
-        )
+        model_str = model_to_str(params.input_type)
         self.data["metadata"]["model"] = model_str
         self.data["metadata"]["max_speed"] = params.constraints.max_linvel
 

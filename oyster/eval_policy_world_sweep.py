@@ -43,7 +43,7 @@ def sim_policy(
         manual_step=manual_step,
         save_video=save_video,
         max_step_count=max_path_length,
-        N=2,
+        N=3,
     )
 
     tasks = env.get_all_task_idx()
@@ -53,6 +53,7 @@ def sim_policy(
     # Filter tasks based on the starting task index provided
     all_eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
     eval_tasks = [t for t in all_eval_tasks if t >= start_task_idx]
+    eval_tasks = [6, 7]
 
     print(
         "Testing starting from Task {} ({} tasks total), starting from World {}".format(
@@ -105,7 +106,7 @@ def sim_policy(
         )
     )
 
-    outfile = "cbf_adapt_gcopter.txt"
+    outfile = "cbf_adapt_bicycle.txt"
     # Only write header if we are starting from the beginning
     if world_num == 0 and (not eval_tasks or eval_tasks[0] == all_eval_tasks[0]):
         with open(outfile, "w", newline="") as f:

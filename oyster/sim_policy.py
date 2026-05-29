@@ -63,7 +63,7 @@ def sim_policy(
     obs_dim = int(np.prod(env.observation_space.shape))
     action_dim = int(np.prod(env.action_space.shape))
     # eval_tasks=list(tasks[-variant['n_eval_tasks']:])
-    N = 1
+    N = -1
     eval_tasks = list(
         tasks[-variant["n_eval_tasks"] + N - 1 : -variant["n_eval_tasks"] + N]
     )
@@ -200,6 +200,7 @@ def sim_policy(
 
     print("total rets:")
     print(total_rets)
+    input()
 
 
 @click.command()

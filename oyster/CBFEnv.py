@@ -40,6 +40,17 @@ class RLObs(IntEnum):
 def action_unnormalize(val, min, max):
     return (val + 1.0) * (max - min) / 2.0 + min
 
+def model_to_str(model):
+    ret = "Unknown"
+    if model == Dynamics.UNICYCLE:
+        ret = "Unicycle"
+    elif model == Dynamics.DOUBLE_INTEGRATOR:
+        ret = "Double Integrator"
+    elif model == Dynamics.BICYCLE:
+        ret = "Bicycle"
+
+    return ret
+
 
 class CBFEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
@@ -194,7 +205,7 @@ class CBFEnv(gym.Env):
             0,
             0,
             0,
-            obstacle_inflation=0.325,
+            obstacle_inflation=0.25,
         )
         self.collision_map_util = OccupancyGrid(
             self.collision_occupancy_grid.info.width,
@@ -438,8 +449,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # self.params.cbf.use_cbf = True
-        # params.cbf.alpha_abv = 6.0
-        # params.cbf.alpha_blw = 6.0
+        # self.params.cbf.alpha_abv = 8.0
+        # self.params.cbf.alpha_blw = 8.0
 
         self.set_mpc(self.params)
         # print("params:", params)
@@ -523,6 +534,9 @@ class CBFEnv(gym.Env):
                 "i9": adjusted_traj.get_arclen(),
             }
 
+            if self.dynamic_model == Dynamics.BICYCLE:
+                args["i10"] = self.params.body_length
+
             cbf_abv = self.mpc.debug_fns["h_abv"](**args)
             lfh_abv = self.mpc.debug_fns["Lfh_abv"](**args)
             lghu_abv = self.mpc.debug_fns["Lghu_abv"](**args)
@@ -539,23 +553,25 @@ class CBFEnv(gym.Env):
             obs[i * len(RLObs) + RLObs.CBF_BLW] = float(cbf_blw)
             obs[i * len(RLObs) + RLObs.LFH_LGH_BLW] = float(lfh_blw + lghu_blw)
 
-            if np.any(np.isnan(obs)):
-                # # args = {"i0": state, "i1": xs}
-                print(i, "state:", state)
-                # signed_d = self.mpc.debug_fns("signed_d",args)
-                # print(i, "signed_d", signed_d)
-                print(i, "xr:", self.mpc.debug_fns["xr"](**args))
-                print(i, "yr:", self.mpc.debug_fns["yr"](**args))
-                print(i, "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
-                print(i, "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
-                print(i, "phi_r:", self.mpc.debug_fns["phi_r"](**args))
-                print(i, "theta:", np.atan2(state[3], state[2]))
-                print(i, "p_abv", self.mpc.debug_fns["p_abv"](**args))
-                print(i, "p_blw", self.mpc.debug_fns["p_blw"](**args))
-                print(i, "h_abv:", self.mpc.debug_fns["h_abv"](**args))
-                print(i, "h_blw:", self.mpc.debug_fns["h_blw"](**args))
+            print(obs)
 
-                phi_r = self.mpc.debug_fns["phi_r"](**args)
+            # if np.any(np.isnan(obs)):
+            #     # # args = {"i0": state, "i1": xs}
+            #     print(i, "state:", state)
+            #     # signed_d = self.mpc.debug_fns("signed_d",args)
+            #     # print(i, "signed_d", signed_d)
+            #     print(i, "xr:", self.mpc.debug_fns["xr"](**args))
+            #     print(i, "yr:", self.mpc.debug_fns["yr"](**args))
+            #     print(i, "xr_dot:", self.mpc.debug_fns["xr_dot"](**args))
+            #     print(i, "yr_dot:", self.mpc.debug_fns["yr_dot"](**args))
+            #     print(i, "phi_r:", self.mpc.debug_fns["phi_r"](**args))
+            #     print(i, "theta:", np.atan2(state[3], state[2]))
+            #     print(i, "p_abv", self.mpc.debug_fns["p_abv"](**args))
+            #     print(i, "p_blw", self.mpc.debug_fns["p_blw"](**args))
+            #     print(i, "h_abv:", self.mpc.debug_fns["h_abv"](**args))
+            #     print(i, "h_blw:", self.mpc.debug_fns["h_blw"](**args))
+            #
+            #     phi_r = self.mpc.debug_fns["phi_r"](**args)
 
         state = self.mpc.get_state_from_horizon(0)
         # state[4] = max(state[4], 1e-2)
@@ -615,11 +631,7 @@ class CBFEnv(gym.Env):
         # trajectory = extend_trajectory(self.mpc.get_trajectory(), self.mpc.get_trajectory().get_arclen() + 2)
         if self.plotter is None:
             meta_data = {
-                "model": (
-                    "Unicycle"
-                    if self.params.input_type == Dynamics.UNICYCLE
-                    else "Double Integrator"
-                ),
+                "model": model_to_str(self.dynamic_model),
                 "max_speed": self.params.constraints.max_linvel,
             }
 
@@ -646,7 +658,7 @@ class CBFEnv(gym.Env):
         # obs = self.get_obs()
         velocity = (
             self.robot_state[3]
-            if self.dynamic_model == Dynamics.UNICYCLE
+            if self.dynamic_model == Dynamics.UNICYCLE or self.dynamic_model == Dynamics.BICYCLE
             else np.linalg.norm(self.robot_state[2:4])
         )
         horizon = self.mpc.get_horizon()
@@ -944,7 +956,7 @@ def main(record_data, manual_step, task_num, world_sweep, world_num, log_data):
         while not done:
             obs, reward, done, _ = env.step([0, 0])
             if log_data:
-                if env.dynamic_model == Dynamics.UNICYCLE:
+                if env.dynamic_model == Dynamics.UNICYCLE or env.dynamic_model == Dynamics.BICYCLE:
                     velocity = env.robot_state[3]
                 else:
                     velocity = np.linalg.norm(env.robot_state[3:5])
