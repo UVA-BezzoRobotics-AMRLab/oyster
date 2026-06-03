@@ -19,7 +19,8 @@ def load_world_list(file_path):
 )
 def main(world_list_file):
     # 1. Schedule of alpha values
-    alpha_schedule = [-1, 3.0, 4.0, 6.0, 8.0]
+    # alpha_schedule = [-1, 0.5, 3.0, 4.0, 6.0, 8.0]
+    alpha_schedule = [-1, 3.0, 8.0]
 
     # 2. Load worlds from supplied file
     world_nums = load_world_list(world_list_file)
@@ -30,12 +31,12 @@ def main(world_list_file):
     env = CBFEnv()
     tasks = env.get_all_task_idx()
     # As per your snippet: testing the last 4 tasks
-    eval_tasks = [tasks[6]]
+    eval_tasks = [tasks[6], tasks[7]]
 
     # 3. Sweep iterate for every alpha value
     for alpha in alpha_schedule:
         # 4. Create new file for this specific alpha
-        outfile = f"cbf_bicycle_1_5_alpha_{alpha}.txt"
+        outfile = f"cbf_bicycle_{alpha}.txt"
 
         # Initialize the new file with headers
         with open(outfile, "w", newline="") as f:

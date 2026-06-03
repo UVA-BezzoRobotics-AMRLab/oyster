@@ -53,7 +53,7 @@ def sim_policy(
     # Filter tasks based on the starting task index provided
     all_eval_tasks = list(tasks[-variant["n_eval_tasks"] :])
     eval_tasks = [t for t in all_eval_tasks if t >= start_task_idx]
-    eval_tasks = [6, 7]
+    eval_tasks = [6, 7, 8, 9]
 
     print(
         "Testing starting from Task {} ({} tasks total), starting from World {}".format(

@@ -12,7 +12,7 @@ max_linvel: 1.0
 max_linacc: 3.2
 max_angacc: 6.283
 
-body_length: 0.2
+body_length: 0.5
 
 # cost function weights
 w_cte: 1.0
@@ -23,8 +23,8 @@ w_angvel: 0.15
 w_angvel_d: .7
 
 w_lag_e: 100
-w_contour_e: 5.0
-w_speed: 0.5
+w_contour_e: 1.0
+w_speed: 3.0
 
 # CLF Params
 w_lyap_lag_e: 1

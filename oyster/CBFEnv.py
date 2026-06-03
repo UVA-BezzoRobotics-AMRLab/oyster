@@ -101,8 +101,8 @@ class CBFEnv(gym.Env):
         self.traj_planner_success = False
 
         self.planner_params = PlannerParams()
-        # self.planner_params.SOLVER = "faster"
-        self.planner_params.SOLVER = "gcopter"
+        self.planner_params.SOLVER = "faster"
+        # self.planner_params.SOLVER = "gcopter"
         self.planner_params.W_MAX = 5
         self.planner_params.V_MAX = 100
         self.planner_params.A_MAX = 500
@@ -449,8 +449,8 @@ class CBFEnv(gym.Env):
             self.set_world([world_num])
 
         # self.params.cbf.use_cbf = True
-        # self.params.cbf.alpha_abv = 8.0
-        # self.params.cbf.alpha_blw = 8.0
+        # self.params.cbf.alpha_abv = 0.5
+        # self.params.cbf.alpha_blw = 0.5
 
         self.set_mpc(self.params)
         # print("params:", params)

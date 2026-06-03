@@ -49,7 +49,7 @@ def rollout(
         a, agent_info = agent.get_action(o)
         next_o, r, d, env_info = env.step(a)
         if logger != None:
-            if env.dynamic_model == Dynamics.UNICYCLE:
+            if env.dynamic_model == Dynamics.UNICYCLE or env.dynamic_model == Dynamics.BICYCLE:
                 velocity = env.robot_state[3]
             else:
                 velocity = np.linalg.norm(env.robot_state[2:4])

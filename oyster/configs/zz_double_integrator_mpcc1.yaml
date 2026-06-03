@@ -28,7 +28,7 @@ w_speed: 3.0
 # CLF Params
 w_lyap_lag_e: 0.1
 w_lyap_contour_e: 0.1
-clf_gamma: 0.5
+clf_gamma: 10.0
 
 # CBF params
 use_cbf: true
