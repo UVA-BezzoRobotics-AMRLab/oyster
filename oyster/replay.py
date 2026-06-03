@@ -239,10 +239,10 @@ class BasePlotter:
         if len(self.steps) > 1:
             if not self.telemetry_only:
                 segs = np.array([self.tx, self.ty]).T.reshape(-1, 1, 2)
-                # self.path_coll.set_segments(np.concatenate([segs[:-1], segs[1:]], axis=1))
-                # self.path_coll.set_array(
-                #     np.linspace(0, i / max(len(self.frames), 1), len(self.steps))
-                # )
+                self.path_coll.set_segments(np.concatenate([segs[:-1], segs[1:]], axis=1))
+                self.path_coll.set_array(
+                    np.linspace(0, i / max(len(self.frames), 1), len(self.steps))
+                )
             
             for k, d in zip(
                 ["au", "al", "hu", "hl", "v"],
@@ -340,7 +340,6 @@ class BasePlotter:
 
             # ── Tubes ─────────────────────────────────────────────────────────
             tube = fr.get("tubes")
-            tube = None
             if tube and len(tube.get("top", [])) > 0 and len(tube.get("bottom", [])) > 0:
                 upper = np.array(tube["top"])
                 lower = np.array(tube["bottom"])
@@ -351,21 +350,21 @@ class BasePlotter:
 
             # ── Trajectory spline ─────────────────────────────────────────────
             t = fr.get("trajectory", {})
-            # knots, xs, ys = t.get("knots"), t.get("xs"), t.get("ys")
-            # if knots and xs and ys:
-            #     traj = build_trajectory(knots, xs, ys)
-            #     ss   = np.linspace(0, traj.get_arclen(), 200)
-            #     pts  = np.vstack([traj(s) for s in ss])
-            #     self.ax.plot(pts[:, 0], pts[:, 1],
-            #                  color=TRAJECTORY, lw=4, alpha=1.0, zorder=3)
+            knots, xs, ys = t.get("knots"), t.get("xs"), t.get("ys")
+            if knots and xs and ys:
+                traj = build_trajectory(knots, xs, ys)
+                ss   = np.linspace(0, traj.get_arclen(), 200)
+                pts  = np.vstack([traj(s) for s in ss])
+                self.ax.plot(pts[:, 0], pts[:, 1],
+                             color=TRAJECTORY, lw=4, alpha=1.0, zorder=3)
 
             # ── MPC horizon ───────────────────────────────────────────────────
             horizon = fr.get("mpc_horizon", [])
-            # if len(horizon) > 1:
-            #     self.ax.plot(
-            #         [p[0] for p in horizon], [p[1] for p in horizon],
-            #         color=C_HORIZON, lw=3, zorder=5,
-            #     )
+            if len(horizon) > 1:
+                self.ax.plot(
+                    [p[0] for p in horizon], [p[1] for p in horizon],
+                    color=C_HORIZON, lw=3, zorder=5,
+                )
 
         # ── Vertical markers are still drawn on active telemetry axes ─────────
         for ax in [self.ax_a, self.ax_h, self.ax_v]:
